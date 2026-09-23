@@ -1,0 +1,1 @@
+C:/Program Files/PostgreSQL/18/bin/postgres.exe "-D" "D:/projects/ceodashboard/backend/.pg_audit_data" "-p" "55432" "-h" "localhost"
