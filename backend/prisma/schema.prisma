@@ -134,43 +134,43 @@ enum FiscalPeriodStatus {
 }
 
 model FiscalPeriod {
-  id          String             @id @default(uuid())
-  period      String             @unique // Format: YYYY-MM (e.g., 2026-09)
-  status      FiscalPeriodStatus  @default(OPEN)
-  openedAt    DateTime           @default(now())
-  openedBy    String
-  closedAt    DateTime?
-  closedBy    String?
-  reopenedAt  DateTime?
-  reopenedBy  String?
-  created_at  DateTime           @default(now())
-  updated_at  DateTime           @updatedAt
+  id         String             @id @default(uuid())
+  period     String             @unique // Format: YYYY-MM (e.g., 2026-09)
+  status     FiscalPeriodStatus @default(OPEN)
+  openedAt   DateTime           @default(now())
+  openedBy   String
+  closedAt   DateTime?
+  closedBy   String?
+  reopenedAt DateTime?
+  reopenedBy String?
+  created_at DateTime           @default(now())
+  updated_at DateTime           @updatedAt
 
   @@map("fiscal_periods")
 }
 
 model User {
-  id                    String    @id @default(uuid())
-  username              String    @unique
-  email                 String    @unique
-  password_hash         String
-  full_name             String
-  role_id               String
-  branch_id             String?
-  is_active             Boolean   @default(true)
-  mfa_secret            String?   @db.Text
-  mfa_enabled           Boolean   @default(false)
-  mfa_backup_codes       String[]  @default([])
-  mfa_verified_at        DateTime?
-  created_at            DateTime  @default(now())
-  updated_at            DateTime  @updatedAt
+  id               String    @id @default(uuid())
+  username         String    @unique
+  email            String    @unique
+  password_hash    String
+  full_name        String
+  role_id          String
+  branch_id        String?
+  is_active        Boolean   @default(true)
+  mfa_secret       String?   @db.Text
+  mfa_enabled      Boolean   @default(false)
+  mfa_backup_codes String[]  @default([])
+  mfa_verified_at  DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
 
-  role                  Role      @relation(fields: [role_id], references: [id])
-  branch                Branch?   @relation(fields: [branch_id], references: [id])
-  sales                 Sale[]
-  inventory_logs        InventoryTransaction[]
-  audit_logs            AuditLog[]
-  register_sessions     RegisterSession[]
+  role              Role                   @relation(fields: [role_id], references: [id])
+  branch            Branch?                @relation(fields: [branch_id], references: [id])
+  sales             Sale[]
+  inventory_logs    InventoryTransaction[]
+  audit_logs        AuditLog[]
+  register_sessions RegisterSession[]
 
   @@map("users")
 }
@@ -195,7 +195,7 @@ model Permission {
   description String?
   created_at  DateTime @default(now())
 
-  roles       RolePermission[]
+  roles RolePermission[]
 
   @@map("permissions")
 }
@@ -204,8 +204,8 @@ model RolePermission {
   role_id       String
   permission_id String
 
-  role          Role       @relation(fields: [role_id], references: [id], onDelete: Cascade)
-  permission    Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade)
 
   @@id([role_id, permission_id])
   @@map("role_permissions")
@@ -221,15 +221,16 @@ model Branch {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  users            User[]
-  warehouses       Warehouse[]
-  sales            Sale[]
-  expenses         Expense[]
-  returns          SaleReturn[]
-  feedbacks        Feedback[]
-  complaints       Complaint[]
-  cash_registers   CashRegister[]
+  users             User[]
+  warehouses        Warehouse[]
+  sales             Sale[]
+  expenses          Expense[]
+  returns           SaleReturn[]
+  feedbacks         Feedback[]
+  complaints        Complaint[]
+  cash_registers    CashRegister[]
   register_sessions RegisterSession[]
+  store_sync_events StoreSyncEvent[]
 
   @@map("branches")
 }
@@ -243,58 +244,60 @@ model Warehouse {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  branch     Branch?    @relation(fields: [branch_id], references: [id])
-  purchases  Purchase[]
+  branch    Branch?    @relation(fields: [branch_id], references: [id])
+  purchases Purchase[]
 
   @@map("warehouses")
 }
 
 model Category {
-  id          String    @id @default(uuid())
-  name        String    @unique
+  id          String   @id @default(uuid())
+  name        String   @unique
   description String?
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
-  products    Product[]
+  products Product[]
 
   @@map("categories")
 }
 
 model Unit {
-  id           String    @id @default(uuid())
-  name         String    @unique
+  id           String   @id @default(uuid())
+  name         String   @unique
   abbreviation String
-  created_at   DateTime  @default(now())
+  created_at   DateTime @default(now())
 
-  products     Product[]
+  products Product[]
 
   @@map("units")
 }
 
 model Product {
-  id              String   @id @default(uuid())
-  sku             String   @unique
-  barcode         String?  @unique
-  name            String
-  category_id     String
-  unit_id         String
-  cost_price      Decimal  @db.Decimal(12, 2)
-  selling_price   Decimal  @db.Decimal(12, 2)
-  wholesale_price Decimal? @db.Decimal(12, 2)
-  min_stock_level Int      @default(5)
-  is_active       Boolean  @default(true)
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  id                String   @id @default(uuid())
+  sku               String   @unique
+  barcode           String?  @unique
+  pasalo_product_id String?  @unique
+  name              String
+  category_id       String
+  unit_id           String
+  cost_price        Decimal  @db.Decimal(12, 2)
+  selling_price     Decimal  @db.Decimal(12, 2)
+  wholesale_price   Decimal? @db.Decimal(12, 2)
+  min_stock_level   Int      @default(5)
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
 
-  category        Category               @relation(fields: [category_id], references: [id])
-  unit            Unit                   @relation(fields: [unit_id], references: [id])
-  stock_balances  StockBalance[]
-  inventory_logs  InventoryTransaction[]
-  sale_items      SaleItem[]
-  purchase_items  PurchaseItem[]
-  transfer_items  StockTransferItem[]
-  return_items    SaleReturnItem[]
+  category               Category               @relation(fields: [category_id], references: [id])
+  unit                   Unit                   @relation(fields: [unit_id], references: [id])
+  stock_balances         StockBalance[]
+  inventory_logs         InventoryTransaction[]
+  sale_items             SaleItem[]
+  purchase_items         PurchaseItem[]
+  transfer_items         StockTransferItem[]
+  transfer_receipt_items TransferReceiptItem[]
+  return_items           SaleReturnItem[]
 
   @@map("products")
 }
@@ -307,7 +310,7 @@ model StockBalance {
   quantity      Decimal  @default(0) @db.Decimal(12, 3)
   updated_at    DateTime @updatedAt
 
-  product       Product  @relation(fields: [product_id], references: [id])
+  product Product @relation(fields: [product_id], references: [id])
 
   @@unique([product_id, location_id])
   @@map("stock_balances")
@@ -327,96 +330,129 @@ model InventoryTransaction {
   notes          String?
   created_at     DateTime              @default(now())
 
-  product        Product               @relation(fields: [product_id], references: [id])
-  user           User                  @relation(fields: [user_id], references: [id])
+  product Product @relation(fields: [product_id], references: [id])
+  user    User    @relation(fields: [user_id], references: [id])
 
   @@map("inventory_transactions")
 }
 
 model StockTransfer {
-  id                      String              @id @default(uuid())
-  transfer_number         String              @unique
+  id                      String         @id @default(uuid())
+  transfer_number         String         @unique
   source_location_id      String
   destination_location_id String
-  status                  TransferStatus      @default(PENDING)
+  status                  TransferStatus @default(PENDING)
   notes                   String?
   created_by              String
-  created_at              DateTime            @default(now())
-  updated_at              DateTime            @updatedAt
+  created_at              DateTime       @default(now())
+  updated_at              DateTime       @updatedAt
 
-  items                   StockTransferItem[]
+  items    StockTransferItem[]
+  receipts TransferReceipt[]
 
   @@map("stock_transfers")
 }
 
 model StockTransferItem {
-  id          String        @id @default(uuid())
+  id          String  @id @default(uuid())
   transfer_id String
   product_id  String
-  quantity    Decimal       @db.Decimal(12, 3)
+  quantity    Decimal @db.Decimal(12, 3)
 
-  transfer    StockTransfer @relation(fields: [transfer_id], references: [id], onDelete: Cascade)
-  product     Product       @relation(fields: [product_id], references: [id])
+  transfer StockTransfer @relation(fields: [transfer_id], references: [id], onDelete: Cascade)
+  product  Product       @relation(fields: [product_id], references: [id])
 
   @@map("stock_transfer_items")
 }
 
-model Customer {
-  id                      String   @id @default(uuid())
-  code                    String   @unique
-  name                    String
-  phone                   String?
-  email                   String?
-  is_b2b                  Boolean  @default(false)
-  credit_limit            Decimal  @default(0) @db.Decimal(12, 2)
-  outstanding_balance    Decimal  @default(0) @db.Decimal(12, 2)
-  credit_hold             Boolean  @default(false)
-  aging_0_30              Decimal  @default(0) @db.Decimal(12, 2)
-  aging_31_60             Decimal  @default(0) @db.Decimal(12, 2)
-  aging_61_90             Decimal  @default(0) @db.Decimal(12, 2)
-  aging_90_plus           Decimal  @default(0) @db.Decimal(12, 2)
-  collection_status       String?  // ACTIVE, OVERDUE, COLLECTION, LEGAL
-  last_payment_date       DateTime?
-  // Loyalty fields
-  loyalty_points_balance  Decimal  @default(0) @db.Decimal(12, 0)
-  lifetime_spend          Decimal  @default(0) @db.Decimal(12, 2)
-  total_orders            Int      @default(0)
-  first_purchase_at       DateTime?
-  last_purchase_at        DateTime?
-  date_of_birth           DateTime?
-  gender                  String?
-  address                 String?
-  status                  String   @default("ACTIVE") // ACTIVE, INACTIVE
-  created_at              DateTime @default(now())
-  updated_at              DateTime @updatedAt
+model TransferReceipt {
+  id                   String   @id @default(uuid())
+  transfer_id          String
+  idempotency_key      String   @unique
+  payload_hash         String
+  destination_store_id String
+  status               String
+  received_at          DateTime @default(now())
+  received_by          String
 
-  sales                   Sale[]
-  returns                 SaleReturn[]
-  loyalty_transactions    LoyaltyTransaction[]
-  feedbacks               Feedback[]
-  complaints              Complaint[]
+  transfer StockTransfer         @relation(fields: [transfer_id], references: [id])
+  items    TransferReceiptItem[]
+
+  @@index([transfer_id])
+  @@map("transfer_receipts")
+}
+
+model TransferReceiptItem {
+  id                 String  @id @default(uuid())
+  receipt_id         String
+  product_id         String
+  expected_quantity  Decimal @db.Decimal(12, 3)
+  received_quantity  Decimal @db.Decimal(12, 3)
+  remaining_quantity Decimal @db.Decimal(12, 3)
+
+  receipt TransferReceipt @relation(fields: [receipt_id], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [product_id], references: [id])
+
+  @@unique([receipt_id, product_id])
+  @@map("transfer_receipt_items")
+}
+
+model Customer {
+  id                     String    @id @default(uuid())
+  code                   String    @unique
+  name                   String
+  phone                  String?
+  email                  String?
+  is_b2b                 Boolean   @default(false)
+  credit_limit           Decimal   @default(0) @db.Decimal(12, 2)
+  outstanding_balance    Decimal   @default(0) @db.Decimal(12, 2)
+  credit_hold            Boolean   @default(false)
+  aging_0_30             Decimal   @default(0) @db.Decimal(12, 2)
+  aging_31_60            Decimal   @default(0) @db.Decimal(12, 2)
+  aging_61_90            Decimal   @default(0) @db.Decimal(12, 2)
+  aging_90_plus          Decimal   @default(0) @db.Decimal(12, 2)
+  collection_status      String? // ACTIVE, OVERDUE, COLLECTION, LEGAL
+  last_payment_date      DateTime?
+  // Loyalty fields
+  loyalty_points_balance Decimal   @default(0) @db.Decimal(12, 0)
+  lifetime_spend         Decimal   @default(0) @db.Decimal(12, 2)
+  total_orders           Int       @default(0)
+  first_purchase_at      DateTime?
+  last_purchase_at       DateTime?
+  date_of_birth          DateTime?
+  gender                 String?
+  address                String?
+  status                 String    @default("ACTIVE") // ACTIVE, INACTIVE
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  sales                Sale[]
+  returns              SaleReturn[]
+  loyalty_transactions LoyaltyTransaction[]
+  feedbacks            Feedback[]
+  complaints           Complaint[]
 
   @@unique([phone])
   @@map("customers")
 }
 
 model Sale {
-  id              String        @id @default(uuid())
-  sale_number     String        @unique
+  id              String       @id @default(uuid())
+  sale_number     String       @unique
   branch_id       String
   cashier_id      String
   customer_id     String?
-  channel         SalesChannel  @default(RETAIL)
-  status          SaleStatus    @default(COMPLETED)
-  subtotal        Decimal       @db.Decimal(12, 2)
-  discount_amount Decimal       @default(0) @db.Decimal(12, 2)
-  tax_amount      Decimal       @default(0) @db.Decimal(12, 2)
-  total_amount    Decimal       @db.Decimal(12, 2)
+  channel         SalesChannel @default(RETAIL)
+  status          SaleStatus   @default(COMPLETED)
+  subtotal        Decimal      @db.Decimal(12, 2)
+  discount_amount Decimal      @default(0) @db.Decimal(12, 2)
+  tax_amount      Decimal      @default(0) @db.Decimal(12, 2)
+  total_amount    Decimal      @db.Decimal(12, 2)
   voided_by       String?
   voided_at       DateTime?
   void_reason     String?
-  created_at      DateTime      @default(now())
-  updated_at      DateTime      @updatedAt
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
 
   branch              Branch              @relation(fields: [branch_id], references: [id])
   cashier             User                @relation(fields: [cashier_id], references: [id])
@@ -432,16 +468,16 @@ model Sale {
 }
 
 model SaleItem {
-  id          String   @id @default(uuid())
-  sale_id     String
-  product_id  String
-  quantity    Decimal  @db.Decimal(12, 3)
-  unit_price  Decimal  @db.Decimal(12, 2)
-  unit_cost   Decimal  @db.Decimal(12, 2)
-  subtotal    Decimal  @db.Decimal(12, 2)
+  id         String  @id @default(uuid())
+  sale_id    String
+  product_id String
+  quantity   Decimal @db.Decimal(12, 3)
+  unit_price Decimal @db.Decimal(12, 2)
+  unit_cost  Decimal @db.Decimal(12, 2)
+  subtotal   Decimal @db.Decimal(12, 2)
 
-  sale        Sale     @relation(fields: [sale_id], references: [id], onDelete: Cascade)
-  product     Product  @relation(fields: [product_id], references: [id])
+  sale    Sale    @relation(fields: [sale_id], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [product_id], references: [id])
 
   @@map("sale_items")
 }
@@ -454,133 +490,133 @@ model SalePayment {
   reference_code String?
   created_at     DateTime      @default(now())
 
-  sale           Sale          @relation(fields: [sale_id], references: [id], onDelete: Cascade)
+  sale Sale @relation(fields: [sale_id], references: [id], onDelete: Cascade)
 
   @@map("sale_payments")
 }
 
 model SaleReturn {
-  id              String        @id @default(uuid())
-  return_number   String        @unique
-  sale_id         String
-  branch_id       String
-  customer_id     String?
-  total_amount    Decimal       @db.Decimal(12, 2)
-  refund_amount   Decimal       @db.Decimal(12, 2)
-  reason          String
-  created_by      String
-  created_at      DateTime      @default(now())
+  id            String   @id @default(uuid())
+  return_number String   @unique
+  sale_id       String
+  branch_id     String
+  customer_id   String?
+  total_amount  Decimal  @db.Decimal(12, 2)
+  refund_amount Decimal  @db.Decimal(12, 2)
+  reason        String
+  created_by    String
+  created_at    DateTime @default(now())
 
-  sale            Sale          @relation(fields: [sale_id], references: [id])
-  branch          Branch        @relation(fields: [branch_id], references: [id])
-  customer        Customer?     @relation(fields: [customer_id], references: [id])
-  return_items    SaleReturnItem[]
+  sale         Sale             @relation(fields: [sale_id], references: [id])
+  branch       Branch           @relation(fields: [branch_id], references: [id])
+  customer     Customer?        @relation(fields: [customer_id], references: [id])
+  return_items SaleReturnItem[]
 
   @@map("sale_returns")
 }
 
 model SaleReturnItem {
-  id              String        @id @default(uuid())
-  return_id       String
-  product_id      String
-  quantity        Decimal       @db.Decimal(12, 3)
-  unit_price      Decimal       @db.Decimal(12, 2)
-  refund_amount   Decimal       @db.Decimal(12, 2)
+  id            String  @id @default(uuid())
+  return_id     String
+  product_id    String
+  quantity      Decimal @db.Decimal(12, 3)
+  unit_price    Decimal @db.Decimal(12, 2)
+  refund_amount Decimal @db.Decimal(12, 2)
 
-  return          SaleReturn    @relation(fields: [return_id], references: [id], onDelete: Cascade)
-  product         Product       @relation(fields: [product_id], references: [id])
+  return  SaleReturn @relation(fields: [return_id], references: [id], onDelete: Cascade)
+  product Product    @relation(fields: [product_id], references: [id])
 
   @@map("sale_return_items")
 }
 
 model CashRegister {
-  id          String   @id @default(uuid())
-  code        String   @unique
-  name        String
-  branch_id   String
-  is_active   Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id         String   @id @default(uuid())
+  code       String   @unique
+  name       String
+  branch_id  String
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
-  branch      Branch              @relation(fields: [branch_id], references: [id])
-  sessions    RegisterSession[]
+  branch   Branch            @relation(fields: [branch_id], references: [id])
+  sessions RegisterSession[]
 
   @@map("cash_registers")
 }
 
 model RegisterSession {
-  id              String                @id @default(uuid())
-  session_number  String                @unique
-  register_id     String
-  cashier_id      String
-  branch_id       String
-  status          RegisterSessionStatus  @default(OPEN)
-  opening_cash    Decimal               @default(0) @db.Decimal(12, 2)
-  closing_cash    Decimal?              @db.Decimal(12, 2)
-  expected_cash   Decimal?              @db.Decimal(12, 2)
-  variance        Decimal?              @db.Decimal(12, 2)
-  variance_approved Boolean             @default(false)
-  approved_by     String?
-  approved_at     DateTime?
-  opened_at       DateTime              @default(now())
-  closed_at       DateTime?
-  opened_by       String
-  closed_by       String?
-  notes           String?
-  created_at      DateTime              @default(now())
-  updated_at      DateTime              @updatedAt
+  id                String                @id @default(uuid())
+  session_number    String                @unique
+  register_id       String
+  cashier_id        String
+  branch_id         String
+  status            RegisterSessionStatus @default(OPEN)
+  opening_cash      Decimal               @default(0) @db.Decimal(12, 2)
+  closing_cash      Decimal?              @db.Decimal(12, 2)
+  expected_cash     Decimal?              @db.Decimal(12, 2)
+  variance          Decimal?              @db.Decimal(12, 2)
+  variance_approved Boolean               @default(false)
+  approved_by       String?
+  approved_at       DateTime?
+  opened_at         DateTime              @default(now())
+  closed_at         DateTime?
+  opened_by         String
+  closed_by         String?
+  notes             String?
+  created_at        DateTime              @default(now())
+  updated_at        DateTime              @updatedAt
 
-  register        CashRegister          @relation(fields: [register_id], references: [id])
-  cashier         User                  @relation(fields: [cashier_id], references: [id])
-  branch          Branch                @relation(fields: [branch_id], references: [id])
+  register        CashRegister            @relation(fields: [register_id], references: [id])
+  cashier         User                    @relation(fields: [cashier_id], references: [id])
+  branch          Branch                  @relation(fields: [branch_id], references: [id])
   reconciliations PaymentReconciliation[]
 
   @@map("register_sessions")
 }
 
 model PaymentReconciliation {
-  id                String                      @id @default(uuid())
-  session_id        String
-  payment_method    PaymentMethod
-  expected_amount   Decimal                     @db.Decimal(12, 2)
-  actual_amount     Decimal                     @db.Decimal(12, 2)
-  discrepancy       Decimal                     @db.Decimal(12, 2)
-  status            PaymentReconciliationStatus  @default(PENDING)
-  notes             String?
-  reconciled_by     String?
-  reconciled_at     DateTime?
-  created_at        DateTime                    @default(now())
-  updated_at        DateTime                    @updatedAt
+  id              String                      @id @default(uuid())
+  session_id      String
+  payment_method  PaymentMethod
+  expected_amount Decimal                     @db.Decimal(12, 2)
+  actual_amount   Decimal                     @db.Decimal(12, 2)
+  discrepancy     Decimal                     @db.Decimal(12, 2)
+  status          PaymentReconciliationStatus @default(PENDING)
+  notes           String?
+  reconciled_by   String?
+  reconciled_at   DateTime?
+  created_at      DateTime                    @default(now())
+  updated_at      DateTime                    @updatedAt
 
-  session           RegisterSession             @relation(fields: [session_id], references: [id])
+  session RegisterSession @relation(fields: [session_id], references: [id])
 
   @@map("payment_reconciliations")
 }
 
 model OfflineQueue {
-  id              String              @id @default(uuid())
-  device_id       String
-  operation_type  String              // SALE, RETURN, ADJUSTMENT
-  payload         Json                // JSON payload of the operation
-  status          OfflineQueueStatus  @default(PENDING)
-  error_message   String?
-  retry_count     Int                 @default(0)
-  created_at      DateTime            @default(now())
-  synced_at       DateTime?
+  id                  String             @id @default(uuid())
+  device_id           String
+  operation_type      String // SALE, RETURN, ADJUSTMENT
+  payload             Json // JSON payload of the operation
+  status              OfflineQueueStatus @default(PENDING)
+  error_message       String?
+  retry_count         Int                @default(0)
+  created_at          DateTime           @default(now())
+  synced_at           DateTime?
   conflict_resolution String?
 
   @@map("offline_queue")
 }
 
 model DeviceSync {
-  id              String      @id @default(uuid())
-  device_id       String      @unique
-  last_sync_at    DateTime?
-  sync_status     SyncStatus  @default(PENDING)
-  pending_count   Int         @default(0)
-  failed_count    Int         @default(0)
-  created_at      DateTime    @default(now())
-  updated_at      DateTime    @updatedAt
+  id            String     @id @default(uuid())
+  device_id     String     @unique
+  last_sync_at  DateTime?
+  sync_status   SyncStatus @default(PENDING)
+  pending_count Int        @default(0)
+  failed_count  Int        @default(0)
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
 
   @@map("device_syncs")
 }
@@ -589,6 +625,7 @@ model IdempotencyKey {
   id            String   @id @default(uuid())
   key           String   @unique
   endpoint      String
+  request_hash  String?
   response_body Json?
   status        String   @default("PROCESSED") // PROCESSED, FAILED
   created_at    DateTime @default(now())
@@ -596,6 +633,24 @@ model IdempotencyKey {
 
   @@index([key, expires_at])
   @@map("idempotency_keys")
+}
+
+model StoreSyncEvent {
+  id                    String   @id @default(uuid())
+  event_id              String   @unique
+  transfer_id           String
+  destination_branch_id String
+  event_type            String
+  occurred_at           DateTime
+  payload_hash          String
+  metadata              Json?
+  response_body         Json?
+  processed_at          DateTime @default(now())
+
+  destination_branch Branch @relation(fields: [destination_branch_id], references: [id])
+
+  @@index([transfer_id])
+  @@map("store_sync_events")
 }
 
 model Account {
@@ -614,59 +669,59 @@ model Account {
 }
 
 model JournalEntry {
-  id                        String             @id @default(uuid())
-  entry_number              String             @unique
-  date                      DateTime           @default(now())
-  reference_type            String
-  reference_id              String
-  description               String?
-  status                    JournalEntryStatus @default(DRAFT)
+  id                           String             @id @default(uuid())
+  entry_number                 String             @unique
+  date                         DateTime           @default(now())
+  reference_type               String
+  reference_id                 String
+  description                  String?
+  status                       JournalEntryStatus @default(DRAFT)
   reversal_of_journal_entry_id String?
-  reversed_by               String?
-  reversed_at               DateTime?
-  reversal_reason           String?
-  created_by                String
-  created_at                DateTime           @default(now())
+  reversed_by                  String?
+  reversed_at                  DateTime?
+  reversal_reason              String?
+  created_by                   String
+  created_at                   DateTime           @default(now())
 
   ledger_entries            LedgerEntry[]
-  reversal_of_journal_entry JournalEntry?      @relation("JournalEntryReversals", fields: [reversal_of_journal_entry_id], references: [id])
-  reversing_journal_entries  JournalEntry[]      @relation("JournalEntryReversals")
+  reversal_of_journal_entry JournalEntry?  @relation("JournalEntryReversals", fields: [reversal_of_journal_entry_id], references: [id])
+  reversing_journal_entries JournalEntry[] @relation("JournalEntryReversals")
 
   @@map("journal_entries")
 }
 
 model LedgerEntry {
-  id               String       @id @default(uuid())
+  id               String   @id @default(uuid())
   journal_entry_id String
   account_id       String
-  debit            Decimal      @default(0) @db.Decimal(12, 2)
-  credit           Decimal      @default(0) @db.Decimal(12, 2)
-  created_at       DateTime     @default(now())
+  debit            Decimal  @default(0) @db.Decimal(12, 2)
+  credit           Decimal  @default(0) @db.Decimal(12, 2)
+  created_at       DateTime @default(now())
 
-  journal_entry    JournalEntry @relation(fields: [journal_entry_id], references: [id], onDelete: Cascade)
-  account          Account      @relation(fields: [account_id], references: [id])
+  journal_entry JournalEntry @relation(fields: [journal_entry_id], references: [id], onDelete: Cascade)
+  account       Account      @relation(fields: [account_id], references: [id])
 
   @@map("ledger_entries")
 }
 
 model Supplier {
-  id             String     @id @default(uuid())
-  name           String
-  contact_person String?
-  phone          String?
-  email          String?
-  address        String?
-  outstanding_balance Decimal  @default(0) @db.Decimal(12, 2)
-  aging_0_30          Decimal  @default(0) @db.Decimal(12, 2)
-  aging_31_60         Decimal  @default(0) @db.Decimal(12, 2)
-  aging_61_90         Decimal  @default(0) @db.Decimal(12, 2)
-  aging_90_plus       Decimal  @default(0) @db.Decimal(12, 2)
-  payment_terms_days  Int      @default(30)
+  id                  String    @id @default(uuid())
+  name                String
+  contact_person      String?
+  phone               String?
+  email               String?
+  address             String?
+  outstanding_balance Decimal   @default(0) @db.Decimal(12, 2)
+  aging_0_30          Decimal   @default(0) @db.Decimal(12, 2)
+  aging_31_60         Decimal   @default(0) @db.Decimal(12, 2)
+  aging_61_90         Decimal   @default(0) @db.Decimal(12, 2)
+  aging_90_plus       Decimal   @default(0) @db.Decimal(12, 2)
+  payment_terms_days  Int       @default(30)
   last_payment_date   DateTime?
-  created_at     DateTime   @default(now())
-  updated_at     DateTime @updatedAt
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
 
-  purchases      Purchase[]
+  purchases Purchase[]
 
   @@map("suppliers")
 }
@@ -682,23 +737,23 @@ model Purchase {
   created_at      DateTime       @default(now())
   updated_at      DateTime       @updatedAt
 
-  supplier        Supplier       @relation(fields: [supplier_id], references: [id])
-  warehouse       Warehouse      @relation(fields: [warehouse_id], references: [id])
-  purchase_items  PurchaseItem[]
+  supplier       Supplier       @relation(fields: [supplier_id], references: [id])
+  warehouse      Warehouse      @relation(fields: [warehouse_id], references: [id])
+  purchase_items PurchaseItem[]
 
   @@map("purchases")
 }
 
 model PurchaseItem {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   purchase_id String
   product_id  String
-  quantity    Decimal  @db.Decimal(12, 3)
-  unit_cost   Decimal  @db.Decimal(12, 2)
-  subtotal    Decimal  @db.Decimal(12, 2)
+  quantity    Decimal @db.Decimal(12, 3)
+  unit_cost   Decimal @db.Decimal(12, 2)
+  subtotal    Decimal @db.Decimal(12, 2)
 
-  purchase    Purchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
-  product     Product  @relation(fields: [product_id], references: [id])
+  purchase Purchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [product_id], references: [id])
 
   @@map("purchase_items")
 }
@@ -717,18 +772,18 @@ model LoyaltySettings {
 }
 
 model LoyaltyTransaction {
-  id              String                  @id @default(uuid())
-  customer_id     String
-  sale_id         String?                 @unique
-  type            LoyaltyTransactionType
-  points          Decimal                 @db.Decimal(12, 0)
-  balance_after   Decimal                 @db.Decimal(12, 0)
-  description     String
-  created_by      String?
-  created_at      DateTime                @default(now())
+  id            String                 @id @default(uuid())
+  customer_id   String
+  sale_id       String?                @unique
+  type          LoyaltyTransactionType
+  points        Decimal                @db.Decimal(12, 0)
+  balance_after Decimal                @db.Decimal(12, 0)
+  description   String
+  created_by    String?
+  created_at    DateTime               @default(now())
 
-  customer        Customer                @relation(fields: [customer_id], references: [id])
-  sale            Sale?                   @relation(fields: [sale_id], references: [id])
+  customer Customer @relation(fields: [customer_id], references: [id])
+  sale     Sale?    @relation(fields: [sale_id], references: [id])
 
   @@index([customer_id])
   @@index([sale_id])
@@ -736,19 +791,19 @@ model LoyaltyTransaction {
 }
 
 model Feedback {
-  id              String   @id @default(uuid())
-  transaction_id  String
-  customer_id     String?
-  store_id        String
-  rating          Int      // 1-5
-  category        String
-  comment         String?
-  photo_url       String?
-  created_at      DateTime @default(now())
+  id             String   @id @default(uuid())
+  transaction_id String
+  customer_id    String?
+  store_id       String
+  rating         Int // 1-5
+  category       String
+  comment        String?
+  photo_url      String?
+  created_at     DateTime @default(now())
 
-  transaction     Sale     @relation(fields: [transaction_id], references: [id])
-  customer        Customer? @relation(fields: [customer_id], references: [id])
-  store           Branch   @relation(fields: [store_id], references: [id])
+  transaction Sale      @relation(fields: [transaction_id], references: [id])
+  customer    Customer? @relation(fields: [customer_id], references: [id])
+  store       Branch    @relation(fields: [store_id], references: [id])
 
   @@index([customer_id])
   @@index([transaction_id])
@@ -757,25 +812,25 @@ model Feedback {
 }
 
 model Complaint {
-  id              String              @id @default(uuid())
-  ticket_number   String              @unique
-  customer_id     String?
-  transaction_id  String?
-  store_id        String
-  category        String
-  priority        ComplaintPriority   @default(MEDIUM)
-  description     String
-  status          ComplaintStatus     @default(OPEN)
-  assigned_to     String?
-  resolution      String?
-  resolved_at     DateTime?
-  closed_at       DateTime?
-  created_at      DateTime            @default(now())
-  updated_at      DateTime            @updatedAt
+  id             String            @id @default(uuid())
+  ticket_number  String            @unique
+  customer_id    String?
+  transaction_id String?
+  store_id       String
+  category       String
+  priority       ComplaintPriority @default(MEDIUM)
+  description    String
+  status         ComplaintStatus   @default(OPEN)
+  assigned_to    String?
+  resolution     String?
+  resolved_at    DateTime?
+  closed_at      DateTime?
+  created_at     DateTime          @default(now())
+  updated_at     DateTime          @updatedAt
 
-  customer        Customer?           @relation(fields: [customer_id], references: [id])
-  transaction     Sale?               @relation(fields: [transaction_id], references: [id])
-  store           Branch              @relation(fields: [store_id], references: [id])
+  customer    Customer? @relation(fields: [customer_id], references: [id])
+  transaction Sale?     @relation(fields: [transaction_id], references: [id])
+  store       Branch    @relation(fields: [store_id], references: [id])
 
   @@index([customer_id])
   @@index([store_id])
@@ -784,29 +839,29 @@ model Complaint {
 }
 
 model ExpenseCategory {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  account_id  String?
-  created_at  DateTime  @default(now())
+  id         String   @id @default(uuid())
+  name       String   @unique
+  account_id String?
+  created_at DateTime @default(now())
 
-  expenses    Expense[]
+  expenses Expense[]
 
   @@map("expense_categories")
 }
 
 model Expense {
-  id             String          @id @default(uuid())
-  expense_number String          @unique
+  id             String        @id @default(uuid())
+  expense_number String        @unique
   category_id    String
   branch_id      String
-  amount         Decimal         @db.Decimal(12, 2)
+  amount         Decimal       @db.Decimal(12, 2)
   payment_method PaymentMethod
   notes          String?
   user_id        String
-  created_at     DateTime        @default(now())
+  created_at     DateTime      @default(now())
 
-  category       ExpenseCategory @relation(fields: [category_id], references: [id])
-  branch         Branch          @relation(fields: [branch_id], references: [id])
+  category ExpenseCategory @relation(fields: [category_id], references: [id])
+  branch   Branch          @relation(fields: [branch_id], references: [id])
 
   @@map("expenses")
 }
@@ -822,7 +877,7 @@ model AuditLog {
   ip_address String?
   created_at DateTime @default(now())
 
-  user       User?    @relation(fields: [user_id], references: [id])
+  user User? @relation(fields: [user_id], references: [id])
 
   @@map("audit_logs")
 }

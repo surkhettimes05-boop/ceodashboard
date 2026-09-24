@@ -14,7 +14,7 @@ export interface MFAChallengePayload extends TokenPayload {
 
 export function generateAccessToken(payload: TokenPayload): string {
   return jwt.sign(payload, config.jwtSecret, {
-    expiresIn: config.jwtExpiresIn,
+    expiresIn: config.jwtExpiresIn as jwt.SignOptions['expiresIn'],
   });
 }
 

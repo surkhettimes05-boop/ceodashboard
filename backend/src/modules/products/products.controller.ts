@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { ProductsService } from './products.service.js';
-import { createProductSchema, updateProductSchema } from './products.schema.js';
+import { createProductSchema, linkPasaloProductSchema, updateProductSchema } from './products.schema.js';
 import { sendSuccess, sendError } from '../../utils/response.js';
 import { AuthenticatedRequest } from '../../middleware/auth.middleware.js';
 
@@ -44,6 +44,17 @@ export class ProductsController {
       return sendSuccess(res, updated, 'Product updated successfully');
     } catch (err: any) {
       return sendError(res, err.message || 'Failed to update product', 400);
+    }
+  }
+
+  static async linkPasaloProduct(req: AuthenticatedRequest, res: Response) {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { pasaloProductId } = linkPasaloProductSchema.parse(req.body);
+      const product = await ProductsService.linkPasaloProduct(id, pasaloProductId, req.user?.id);
+      return sendSuccess(res, product, 'Product linked to PASALO successfully');
+    } catch (err: any) {
+      return sendError(res, err.message || 'Failed to link product to PASALO', 400);
     }
   }
 }

@@ -22,9 +22,12 @@ import purchasesRoutes from './modules/purchases/purchases.routes.js';
 import salesRoutes from './modules/sales/sales.routes.js';
 import accountingRoutes from './modules/accounting/accounting.routes.js';
 import analyticsRoutes from './modules/analytics/analytics.routes.js';
+import reportingRoutes from './modules/reporting/reporting.routes.js';
 import loyaltyRoutes from './modules/loyalty/loyalty.routes.js';
 import feedbackRoutes from './modules/feedback/feedback.routes.js';
 import complaintsRoutes from './modules/complaints/complaints.routes.js';
+import adminRoutes from './modules/admin/admin.routes.js';
+import syncRoutes from './modules/sync/sync.routes.js';
 
 const app = express();
 const allowedOrigins = config.corsAllowedOrigins;
@@ -125,6 +128,9 @@ app.get('/ready', async (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
+// Machine-to-machine PASALO webhook authenticates with its dedicated shared secret.
+// Mount before the general /api roles router, whose router-level auth middleware is broad.
+app.use('/api/sync', syncRoutes);
 app.use('/api', rolesRoutes);
 app.use('/api/branches', branchesRoutes);
 app.use('/api/warehouses', warehousesRoutes);
@@ -138,9 +144,11 @@ app.use('/api/purchases', purchasesRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api', accountingRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/reporting', reportingRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/complaints', complaintsRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use(errorHandler);
 

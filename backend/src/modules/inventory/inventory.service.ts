@@ -3,6 +3,15 @@ import { InventoryMovementType, TransferStatus } from '@prisma/client';
 import { StockAdjustmentInput, CreateTransferInput } from './inventory.schema.js';
 import { AuditService } from '../audit/audit.service.js';
 import Decimal from 'decimal.js';
+import { createHash } from 'node:crypto';
+import { ReceiveTransferInput } from './inventory.schema.js';
+
+export class TransferReceiveError extends Error {
+  constructor(message: string, public readonly statusCode = 400) {
+    super(message);
+    this.name = 'TransferReceiveError';
+  }
+}
 
 export interface RecordMovementParams {
   productId: string;
@@ -218,51 +227,156 @@ export class InventoryService {
     });
   }
 
-  static async receiveStockTransfer(transferId: string, userId: string) {
-    const transfer = await prisma.stockTransfer.findUnique({
-      where: { id: transferId },
-      include: { items: true },
-    });
-
-    if (!transfer) throw new Error('Transfer record not found.');
-    if (transfer.status !== TransferStatus.IN_TRANSIT) {
-      throw new Error(`Transfer cannot be received. Current status is ${transfer.status}`);
+  static async receiveStockTransfer(
+    transferId: string,
+    input: ReceiveTransferInput,
+    userId: string,
+    currentStoreId: string | null | undefined,
+    idempotencyKey: string,
+  ) {
+    if (!currentStoreId) {
+      throw new TransferReceiveError('A user assigned to a store is required to receive transfers.', 403);
     }
 
-    return prisma.$transaction(async (tx) => {
-      // Add stock to Destination Location (TRANSFER_IN)
-      for (const item of transfer.items) {
-        const product = await tx.product.findUnique({ where: { id: item.product_id } });
-        const unitCost = product ? product.cost_price : 0;
+    const payloadHash = createHash('sha256')
+      .update(JSON.stringify({
+        transferId,
+        items: [...(input.items || [])].sort((a, b) => a.productId.localeCompare(b.productId)),
+      }))
+      .digest('hex');
 
+    return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM stock_transfers WHERE id = ${transferId} FOR UPDATE`;
+      const transfer = await tx.stockTransfer.findUnique({
+        where: { id: transferId },
+        include: { items: true },
+      });
+
+      if (!transfer) throw new TransferReceiveError('Transfer record not found.', 404);
+      if (transfer.destination_location_id !== currentStoreId) {
+        throw new TransferReceiveError('Transfer destination does not match the current store.', 403);
+      }
+
+      const existingByKey = await tx.transferReceipt.findUnique({
+        where: { idempotency_key: idempotencyKey },
+        include: { items: true },
+      });
+      if (existingByKey) {
+        if (existingByKey.transfer_id !== transferId || existingByKey.payload_hash !== payloadHash) {
+          throw new TransferReceiveError('Idempotency key was already used with a different payload.', 409);
+        }
+        return existingByKey;
+      }
+
+      const existingReceipts = await tx.transferReceipt.findMany({ include: { items: true } });
+      const receivedByProduct = new Map<string, Decimal>();
+      for (const receipt of existingReceipts.filter((item) => item.transfer_id === transferId)) {
+        for (const item of receipt.items) {
+          receivedByProduct.set(item.product_id, (receivedByProduct.get(item.product_id) || new Decimal(0)).plus(item.received_quantity.toString()));
+        }
+      }
+
+      if (transfer.status === TransferStatus.COMPLETED) {
+        const latestReceipt = await tx.transferReceipt.findFirst({
+          where: { transfer_id: transferId },
+          include: { items: true },
+          orderBy: { received_at: 'desc' },
+        });
+        if (latestReceipt) return latestReceipt;
+      }
+      if (transfer.status !== TransferStatus.IN_TRANSIT) {
+        throw new TransferReceiveError(`Transfer cannot be received. Current status is ${transfer.status}`);
+      }
+
+      const expectedByProduct = new Map<string, Decimal>();
+      for (const item of transfer.items) {
+        expectedByProduct.set(item.product_id, (expectedByProduct.get(item.product_id) || new Decimal(0)).plus(item.quantity.toString()));
+      }
+      const requestedItems = input.items || [...expectedByProduct.entries()]
+        .map(([productId, expected]) => ({
+          productId,
+          quantity: expected.minus(receivedByProduct.get(productId) || 0).toNumber(),
+        }))
+        .filter((item) => item.quantity > 0);
+      const requestedByProduct = new Map<string, Decimal>();
+      for (const item of requestedItems) {
+        if (!expectedByProduct.has(item.productId)) {
+          throw new TransferReceiveError(`Product ${item.productId} is not part of this transfer.`);
+        }
+        if (requestedByProduct.has(item.productId)) {
+          throw new TransferReceiveError(`Product ${item.productId} appears more than once in the receipt.`);
+        }
+        const quantity = new Decimal(item.quantity);
+        const remaining = expectedByProduct.get(item.productId)!.minus(receivedByProduct.get(item.productId) || 0);
+        if (quantity.isNegative() || quantity.isZero() || quantity.greaterThan(remaining)) {
+          throw new TransferReceiveError(`Invalid received quantity for product ${item.productId}. Remaining quantity: ${remaining.toString()}`);
+        }
+        if (!await tx.product.findUnique({ where: { id: item.productId }, select: { id: true } })) {
+          throw new TransferReceiveError(`Product ${item.productId} not found.`);
+        }
+        requestedByProduct.set(item.productId, quantity);
+      }
+
+      const receipt = await tx.transferReceipt.create({
+        data: {
+          transfer_id: transferId,
+          idempotency_key: idempotencyKey,
+          payload_hash: payloadHash,
+          destination_store_id: currentStoreId,
+          status: 'RECEIVED',
+          received_by: userId,
+          items: {
+            create: [...requestedByProduct.entries()].map(([productId, quantity]) => {
+              const expected = expectedByProduct.get(productId)!;
+              const received = (receivedByProduct.get(productId) || new Decimal(0)).plus(quantity);
+              return {
+                product_id: productId,
+                expected_quantity: expected.toNumber(),
+                received_quantity: quantity.toNumber(),
+                remaining_quantity: expected.minus(received).toNumber(),
+              };
+            }),
+          },
+        },
+        include: { items: true },
+      });
+
+      for (const [productId, quantity] of requestedByProduct) {
+        const product = await tx.product.findUnique({ where: { id: productId } });
         await this.recordMovementTx(tx, {
-          productId: item.product_id,
+          productId,
           locationType: 'BRANCH',
-          locationId: transfer.destination_location_id,
+          locationId: currentStoreId,
           movementType: InventoryMovementType.TRANSFER_IN,
-          quantity: Math.abs(Number(item.quantity)),
-          unitCost,
-          referenceType: 'TRANSFER',
-          referenceId: transfer.id,
+          quantity: quantity.toNumber(),
+          unitCost: product!.cost_price,
+          referenceType: 'WAREHOUSE_TRANSFER',
+          referenceId: transferId,
           userId,
-          notes: `Transfer In from ${transfer.source_location_id}`,
+          notes: `Transfer receipt ${receipt.id}`,
         });
       }
 
-      // Update Transfer status to COMPLETED
-      const updatedTransfer = await tx.stockTransfer.update({
-        where: { id: transferId },
-        data: { status: TransferStatus.COMPLETED },
+      const complete = [...expectedByProduct.entries()].every(([productId, expected]) =>
+        expected.minus(receivedByProduct.get(productId) || 0).minus(requestedByProduct.get(productId) || 0).isZero()
+      );
+      await tx.transferReceipt.update({
+        where: { id: receipt.id },
+        data: { status: complete ? 'COMPLETED' : 'PARTIALLY_RECEIVED' },
       });
+      if (complete) {
+        await tx.stockTransfer.update({ where: { id: transferId }, data: { status: TransferStatus.COMPLETED } });
+      }
 
       await AuditService.log({
         userId,
         action: 'STOCK_TRANSFER_RECEIVED',
-        entity: 'StockTransfer',
-        entityId: transferId,
+        entity: 'TransferReceipt',
+        entityId: receipt.id,
+        newValues: { transferId, storeId: currentStoreId, complete },
       });
 
-      return updatedTransfer;
+      return { ...receipt, status: complete ? 'COMPLETED' : 'PARTIALLY_RECEIVED' };
     });
   }
 

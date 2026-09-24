@@ -161,4 +161,33 @@ export class ProductsService {
 
     return updated;
   }
+
+  static async linkPasaloProduct(id: string, pasaloProductId: string, actorUserId?: string) {
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) throw new Error('Product not found.');
+
+    const existingMapping = await prisma.product.findUnique({
+      where: { pasalo_product_id: pasaloProductId },
+      select: { id: true },
+    });
+    if (existingMapping && existingMapping.id !== id) {
+      throw new Error(`PASALO product '${pasaloProductId}' is already linked to another product.`);
+    }
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data: { pasalo_product_id: pasaloProductId },
+    });
+
+    await AuditService.log({
+      userId: actorUserId,
+      action: 'PRODUCT_PASALO_LINKED',
+      entity: 'Product',
+      entityId: id,
+      oldValues: { pasaloProductId: product.pasalo_product_id },
+      newValues: { pasaloProductId },
+    });
+
+    return updated;
+  }
 }

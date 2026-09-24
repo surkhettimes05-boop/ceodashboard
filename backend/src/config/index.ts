@@ -28,17 +28,27 @@ export function parseAllowedOrigins(rawOrigin: string): string[] {
 }
 
 export function validateConfig(rawEnv: Record<string, string | undefined> = process.env) {
+  const configuredNodeEnv = (rawEnv.NODE_ENV ?? '').trim();
   const nodeEnv = (rawEnv.NODE_ENV ?? 'development').trim() || 'development';
   const port = Number(rawEnv.PORT ?? '3001');
   const databaseUrl = (rawEnv.DATABASE_URL ?? '').trim();
   const jwtSecret = (rawEnv.JWT_SECRET ?? '').trim();
   const jwtRefreshSecret = (rawEnv.JWT_REFRESH_SECRET ?? '').trim();
   const feedbackTokenSecret = (rawEnv.FEEDBACK_TOKEN_SECRET ?? '').trim();
+  const pasaloWebhookSecret = (rawEnv.PASALO_WEBHOOK_SECRET ?? '').trim();
+  const pasaloAllowedBranchCodes = (rawEnv.PASALO_ALLOWED_BRANCH_CODES ?? '')
+    .split(',').map((code) => code.trim()).filter(Boolean);
+  const pasalhoReportingApiUrl = (rawEnv.PASALHO_REPORTING_API_URL ?? '').trim();
+  const pasalhoReportingApiToken = (rawEnv.PASALHO_REPORTING_API_TOKEN ?? '').trim();
   const jwtExpiresIn = (rawEnv.JWT_EXPIRES_IN ?? '15m').trim() || '15m';
   const corsOrigin = (rawEnv.CORS_ORIGIN ?? 'http://localhost:5173').trim();
 
   const errors: string[] = [];
-  const isProduction = nodeEnv === 'production';
+  const isProduction = nodeEnv === 'production' || Boolean(rawEnv.RAILWAY_ENVIRONMENT);
+
+  if (rawEnv.RAILWAY_ENVIRONMENT && nodeEnv !== 'production') {
+    errors.push('Railway deployments require NODE_ENV=production.');
+  }
 
   if (isProduction) {
     if (!jwtSecret || jwtSecret.length < 32) {
@@ -50,8 +60,14 @@ export function validateConfig(rawEnv: Record<string, string | undefined> = proc
     if (jwtSecret && jwtRefreshSecret && jwtSecret === jwtRefreshSecret) {
       errors.push('Production requires JWT_SECRET and JWT_REFRESH_SECRET to differ.');
     }
+    if (pasaloWebhookSecret.length < 32) {
+      errors.push('Production requires PASALO_WEBHOOK_SECRET to be set and at least 32 characters long.');
+    }
     if (!feedbackTokenSecret || feedbackTokenSecret.length < 32) {
       errors.push('Production requires FEEDBACK_TOKEN_SECRET to be set and at least 32 characters long.');
+    }
+    if (!pasaloAllowedBranchCodes.length) {
+      errors.push('Production requires PASALO_ALLOWED_BRANCH_CODES to restrict inbound store-sync destinations.');
     }
     if (!databaseUrl || !validDatabaseUrl.test(databaseUrl)) {
       errors.push('Production requires DATABASE_URL to be set to a valid PostgreSQL connection string.');
@@ -93,9 +109,13 @@ export function validateConfig(rawEnv: Record<string, string | undefined> = proc
     jwtSecret: z.string().min(32),
     jwtRefreshSecret: z.string().min(32),
     feedbackTokenSecret: z.string().min(1),
+    pasaloWebhookSecret: z.string(),
+    pasaloAllowedBranchCodes: z.array(z.string()),
     jwtExpiresIn: z.string().min(1),
     corsOrigin: z.string().min(1),
     corsAllowedOrigins: z.array(z.string().min(1)),
+    pasalhoReportingApiUrl: z.string(),
+    pasalhoReportingApiToken: z.string(),
   });
 
   const resolvedConfig = {
@@ -105,6 +125,10 @@ export function validateConfig(rawEnv: Record<string, string | undefined> = proc
     jwtSecret: jwtSecret || 'dev-jwt-secret-key-change-me-in-production-1224',
     jwtRefreshSecret: jwtRefreshSecret || 'dev-jwt-refresh-secret-key-change-me-in-production-1224',
     feedbackTokenSecret,
+    pasaloWebhookSecret,
+    pasaloAllowedBranchCodes,
+    pasalhoReportingApiUrl,
+    pasalhoReportingApiToken,
     jwtExpiresIn,
     corsOrigin: corsOrigin || 'http://localhost:5173',
     corsAllowedOrigins: parseAllowedOrigins(corsOrigin || 'http://localhost:5173'),

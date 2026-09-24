@@ -23,5 +23,13 @@ export const createTransferSchema = z.object({
   ).min(1, 'At least one item is required for transfer'),
 });
 
+export const receiveTransferSchema = z.object({
+  items: z.array(z.object({
+    productId: z.string().min(1),
+    quantity: z.number().finite().positive('Received quantity must be greater than 0'),
+  })).min(1).optional(),
+});
+
 export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;
 export type CreateTransferInput = z.infer<typeof createTransferSchema>;
+export type ReceiveTransferInput = z.infer<typeof receiveTransferSchema>;

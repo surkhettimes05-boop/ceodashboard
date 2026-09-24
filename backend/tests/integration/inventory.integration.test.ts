@@ -81,9 +81,12 @@ describe('Inventory Integration Tests', () => {
 
   afterAll(async () => {
     // Cleanup test data
+    await prisma.transferReceiptItem.deleteMany({});
+    await prisma.transferReceipt.deleteMany({});
     await prisma.inventoryTransaction.deleteMany({});
     await prisma.stockBalance.deleteMany({});
     await prisma.stockTransferItem.deleteMany({});
+    await prisma.stockTransfer.deleteMany({});
     await prisma.user.deleteMany({ where: { username: testUsername } });
     await prisma.product.deleteMany({ where: { sku: `TEST-${testSuffix}` } });
     await prisma.warehouse.deleteMany({ where: { code: testWarehouseCode } });
@@ -95,8 +98,12 @@ describe('Inventory Integration Tests', () => {
 
   beforeEach(async () => {
     // Clear inventory transactions and stock balances before each test
+    await prisma.transferReceiptItem.deleteMany({});
+    await prisma.transferReceipt.deleteMany({});
     await prisma.inventoryTransaction.deleteMany({});
     await prisma.stockBalance.deleteMany({});
+    await prisma.stockTransferItem.deleteMany({});
+    await prisma.stockTransfer.deleteMany({});
   });
 
   describe('Stock Adjustments', () => {
@@ -203,7 +210,13 @@ describe('Inventory Integration Tests', () => {
         notes: 'Integration test transfer',
         items: [{ productId: testProductId, quantity: 50 }],
       }, testUserId);
-      await InventoryService.receiveStockTransfer(transfer.id, testUserId);
+      await InventoryService.receiveStockTransfer(
+        transfer.id,
+        {},
+        testUserId,
+        testBranchId,
+        `test-receive-${testSuffix}`,
+      );
 
       // Verify source balance
       const sourceBalance = await prisma.stockBalance.findUnique({

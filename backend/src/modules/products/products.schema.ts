@@ -17,5 +17,9 @@ export const updateProductSchema = createProductSchema.partial().extend({
   isActive: z.boolean().optional(),
 });
 
+export const linkPasaloProductSchema = z.object({
+  pasaloProductId: z.string().trim().min(1, 'PASALO product ID is required'),
+});
+
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;

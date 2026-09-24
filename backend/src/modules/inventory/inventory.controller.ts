@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { InventoryService } from './inventory.service.js';
-import { stockAdjustmentSchema, createTransferSchema } from './inventory.schema.js';
+import { stockAdjustmentSchema, createTransferSchema, receiveTransferSchema } from './inventory.schema.js';
 import { sendSuccess, sendError } from '../../utils/response.js';
 import { AuthenticatedRequest } from '../../middleware/auth.middleware.js';
 
@@ -51,11 +51,22 @@ export class InventoryController {
   static async receiveTransfer(req: AuthenticatedRequest, res: Response) {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const input = receiveTransferSchema.parse(req.body);
+      const idempotencyKey = req.get('Idempotency-Key');
+      if (!idempotencyKey) {
+        return sendError(res, 'Idempotency-Key header is required for transfer receiving', 400);
+      }
       const userId = req.user?.id || 'system';
-      const transfer = await InventoryService.receiveStockTransfer(id, userId);
+      const transfer = await InventoryService.receiveStockTransfer(
+        id,
+        input,
+        userId,
+        req.user?.branchId,
+        idempotencyKey,
+      );
       return sendSuccess(res, transfer, 'Stock transfer received and posted');
     } catch (err: any) {
-      return sendError(res, err.message || 'Failed to receive transfer', 400);
+      return sendError(res, err.message || 'Failed to receive transfer', err.statusCode || (err.name === 'ZodError' ? 400 : 400), err.issues);
     }
   }
 
