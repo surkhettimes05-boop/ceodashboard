@@ -231,6 +231,7 @@ model Branch {
   cash_registers    CashRegister[]
   register_sessions RegisterSession[]
   store_sync_events StoreSyncEvent[]
+  online_fulfillments OnlineFulfillment[]
 
   @@map("branches")
 }
@@ -298,6 +299,7 @@ model Product {
   transfer_items         StockTransferItem[]
   transfer_receipt_items TransferReceiptItem[]
   return_items           SaleReturnItem[]
+  online_fulfillment_items OnlineFulfillmentItem[]
 
   @@map("products")
 }
@@ -463,6 +465,7 @@ model Sale {
   loyalty_transaction LoyaltyTransaction?
   feedbacks           Feedback[]
   complaints          Complaint[]
+  online_fulfillment  OnlineFulfillment?
 
   @@map("sales")
 }
@@ -651,6 +654,41 @@ model StoreSyncEvent {
 
   @@index([transfer_id])
   @@map("store_sync_events")
+}
+
+model OnlineFulfillment {
+  id                String   @id @default(uuid())
+  external_order_id String   @unique
+  pasalo_order_id   String   @unique
+  branch_id         String
+  status            String   @default("RESERVED") // RESERVED, COMPLETING, COMPLETED, CANCELLED
+  sale_id           String?  @unique
+  customer_name     String?
+  shipping_address  String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  branch Branch                @relation(fields: [branch_id], references: [id])
+  sale   Sale?                 @relation(fields: [sale_id], references: [id])
+  items  OnlineFulfillmentItem[]
+
+  @@index([branch_id, status])
+  @@map("online_fulfillments")
+}
+
+model OnlineFulfillmentItem {
+  id            String   @id @default(uuid())
+  fulfillment_id String
+  product_id    String
+  quantity      Decimal  @db.Decimal(12, 3)
+  created_at    DateTime @default(now())
+
+  fulfillment OnlineFulfillment @relation(fields: [fulfillment_id], references: [id], onDelete: Cascade)
+  product     Product           @relation(fields: [product_id], references: [id])
+
+  @@unique([fulfillment_id, product_id])
+  @@index([product_id])
+  @@map("online_fulfillment_items")
 }
 
 model Account {

@@ -12,4 +12,20 @@ router.post(
   SyncController.receiveInboundTransfer,
 );
 
+router.post(
+  "/online-fulfillments/reserve",
+  authenticatePasaloWebhook,
+  SyncController.reserveOnlineFulfillment,
+);
+router.post(
+  "/online-fulfillments/:externalOrderId/complete",
+  authenticatePasaloWebhook,
+  SyncController.completeOnlineFulfillment,
+);
+router.post(
+  "/online-fulfillments/:externalOrderId/cancel",
+  authenticatePasaloWebhook,
+  SyncController.cancelOnlineFulfillment,
+);
+
 export default router;
