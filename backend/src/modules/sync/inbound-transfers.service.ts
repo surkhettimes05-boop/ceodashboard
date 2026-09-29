@@ -1,6 +1,5 @@
-import { InventoryMovementType, Prisma } from "@prisma/client";
+import { Prisma, TransferStatus } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
-import { InventoryService } from "../inventory/inventory.service.js";
 import { InboundTransferInput } from "./inbound-transfers.schema.js";
 import { logger } from "../../utils/logger.js";
 import { createHash } from "node:crypto";
@@ -109,6 +108,29 @@ export class InboundTransfersService {
             "No active CEO or ADMIN user is available for webhook inventory entries.",
           );
 
+        const inboundTransfer = await tx.stockTransfer.create({
+          data: {
+            transfer_number: `PASALO-${input.transferNo}`,
+            source_location_id: "PASALO:CENTRAL_WAREHOUSE",
+            destination_location_id: branch.id,
+            status: TransferStatus.IN_TRANSIT,
+            notes: `Inbound from PASALO.OS (${input.transferId})`,
+            created_by: actor.id,
+            source_system: "PASALO",
+            external_transfer_id: input.transferId,
+            source_label: "Central Warehouse",
+            items: {
+              create: mappedItems.map(({ item, product }) => ({
+                product_id: product!.id,
+                quantity: item.quantity,
+              })),
+            },
+          },
+          include: {
+            items: { include: { product: { select: { id: true, sku: true, name: true } } } },
+          },
+        });
+
         await tx.storeSyncEvent.create({
           data: {
             event_id: input.eventId,
@@ -121,36 +143,18 @@ export class InboundTransfersService {
           },
         });
 
-        const processedItems = [];
-        for (const { item, product } of mappedItems) {
-          if (!product)
-            throw new MissingPasaloProductMappingsError([item.productId]);
-          const result = await InventoryService.recordMovementTx(tx, {
-            productId: product.id,
-            locationType: "BRANCH",
-            locationId: branch.id,
-            movementType: InventoryMovementType.TRANSFER_IN,
-            quantity: item.quantity,
-            unitCost: product.cost_price,
-            referenceType: "PASALO_TRANSFER",
-            referenceId: input.transferId,
-            userId: actor.id,
-            notes: `PASALO transfer ${input.transferNo}`,
-          });
-          processedItems.push({
-            pasaloProductId: item.productId,
-            productId: product.id,
-            quantity: item.quantity,
-            stockBalanceId: result.updatedBalance.id,
-          });
-        }
-
         const response = {
           transferId: input.transferId,
           transferNo: input.transferNo,
           destinationBranchCode: branch.code,
           branchId: branch.id,
-          processedItems,
+          inboundTransferId: inboundTransfer.id,
+          status: inboundTransfer.status,
+          items: mappedItems.map(({ item, product }) => ({
+            pasaloProductId: item.productId,
+            productId: product!.id,
+            quantity: item.quantity,
+          })),
         };
         await tx.storeSyncEvent.update({
           where: { event_id: input.eventId },
@@ -163,7 +167,40 @@ export class InboundTransfersService {
       const existing = await prisma.storeSyncEvent.findUnique({
         where: { event_id: input.eventId },
       });
-      if (!existing) throw err;
+      if (!existing) {
+        const transfer = await prisma.stockTransfer.findUnique({
+          where: { external_transfer_id: input.transferId },
+          include: { items: { include: { product: { select: { pasalo_product_id: true } } } } },
+        });
+        if (transfer) {
+          const branch = await prisma.branch.findUnique({
+            where: { id: transfer.destination_location_id },
+            select: { code: true },
+          });
+          const existingItems = transfer.items
+            .map((item) => ({ productId: item.product.pasalo_product_id, quantity: Number(item.quantity) }))
+            .sort((a, b) => String(a.productId).localeCompare(String(b.productId)));
+          const incomingItems = input.items
+            .map((item) => ({ productId: item.productId, quantity: item.quantity }))
+            .sort((a, b) => a.productId.localeCompare(b.productId));
+          if (
+            branch?.code !== input.destinationBranchCode ||
+            JSON.stringify(existingItems) !== JSON.stringify(incomingItems)
+          ) {
+            throw new StoreSyncEventConflictError();
+          }
+          return {
+            transferId: input.transferId,
+            transferNo: input.transferNo,
+            destinationBranchCode: input.destinationBranchCode,
+            branchId: transfer.destination_location_id,
+            inboundTransferId: transfer.id,
+            status: transfer.status,
+            alreadyProcessed: true,
+          };
+        }
+        throw err;
+      }
       if (existing.payload_hash !== hash)
         throw new StoreSyncEventConflictError();
       return { ...(existing.response_body as object), alreadyProcessed: true };

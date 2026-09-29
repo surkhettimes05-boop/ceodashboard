@@ -5,40 +5,55 @@ import { sendSuccess, sendError } from '../../utils/response.js';
 import { AuthenticatedRequest } from '../../middleware/auth.middleware.js';
 
 export class InventoryController {
+  private static scopedLocation(req: AuthenticatedRequest, requested?: string) {
+    if (req.user?.role === 'CEO' || req.user?.role === 'ADMIN') return requested;
+    if (!req.user?.branchId) throw Object.assign(new Error('User is not assigned to a store.'), { statusCode: 403 });
+    if (requested && requested !== req.user.branchId) throw Object.assign(new Error('Access to another store is forbidden.'), { statusCode: 403 });
+    return req.user.branchId;
+  }
+
   static async getBalances(req: AuthenticatedRequest, res: Response) {
     try {
-      const locationId = req.query.locationId as string;
-      const balances = await InventoryService.getStockBalances(locationId);
+      const locationId = InventoryController.scopedLocation(req, req.query.locationId as string | undefined);
+      const locationType = req.user?.role === 'CEO' || req.user?.role === 'ADMIN' ? req.query.locationType as 'WAREHOUSE' | 'BRANCH' | undefined : 'BRANCH';
+      const balances = await InventoryService.getStockBalances(locationId, locationType);
       return sendSuccess(res, balances, 'Stock balances retrieved');
     } catch (err: any) {
-      return sendError(res, err.message || 'Failed to retrieve stock balances', 500);
+      return sendError(res, err.message || 'Failed to retrieve stock balances', err.statusCode || 500);
     }
   }
 
   static async getTransactions(req: AuthenticatedRequest, res: Response) {
     try {
       const productId = req.query.productId as string;
-      const locationId = req.query.locationId as string;
-      const logs = await InventoryService.getInventoryTransactions(productId, locationId);
+      const locationId = InventoryController.scopedLocation(req, req.query.locationId as string | undefined);
+      const locationType = req.user?.role === 'CEO' || req.user?.role === 'ADMIN' ? req.query.locationType as 'WAREHOUSE' | 'BRANCH' | undefined : 'BRANCH';
+      const logs = await InventoryService.getInventoryTransactions(productId, locationId, locationType);
       return sendSuccess(res, logs, 'Inventory transactions audit log');
     } catch (err: any) {
-      return sendError(res, err.message || 'Failed to retrieve audit log', 500);
+      return sendError(res, err.message || 'Failed to retrieve audit log', err.statusCode || 500);
     }
   }
 
   static async createAdjustment(req: AuthenticatedRequest, res: Response) {
     try {
       const input = stockAdjustmentSchema.parse(req.body);
+      if (req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN') {
+        if (!req.user?.branchId || input.locationType !== 'BRANCH' || input.locationId !== req.user.branchId) {
+          return sendError(res, 'Can only adjust inventory at your assigned store.', 403);
+        }
+      }
       const userId = req.user?.id || 'system';
       const result = await InventoryService.createStockAdjustment(input, userId);
       return sendSuccess(res, result, 'Stock adjustment processed successfully', 201);
     } catch (err: any) {
-      return sendError(res, err.message || 'Failed to process stock adjustment', 400);
+      return sendError(res, err.message || 'Failed to process stock adjustment', err.statusCode || 400);
     }
   }
 
   static async createTransfer(req: AuthenticatedRequest, res: Response) {
     try {
+      if (req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN') return sendError(res, 'Only CEO/admin users may initiate inventory transfers.', 403);
       const input = createTransferSchema.parse(req.body);
       const userId = req.user?.id || 'system';
       const transfer = await InventoryService.createStockTransfer(input, userId);
@@ -72,19 +87,21 @@ export class InventoryController {
 
   static async getTransfers(req: AuthenticatedRequest, res: Response) {
     try {
-      const transfers = await InventoryService.getStockTransfers();
+      const branchId = InventoryController.scopedLocation(req);
+      const transfers = await InventoryService.getStockTransfers(branchId);
       return sendSuccess(res, transfers, 'Stock transfers retrieved');
     } catch (err: any) {
-      return sendError(res, err.message || 'Failed to retrieve transfers', 500);
+      return sendError(res, err.message || 'Failed to retrieve transfers', err.statusCode || 500);
     }
   }
 
   static async getLowStockAlerts(req: AuthenticatedRequest, res: Response) {
     try {
-      const alerts = await InventoryService.getLowStockAlerts();
+      const locationId = InventoryController.scopedLocation(req, req.query.locationId as string | undefined);
+      const alerts = await InventoryService.getLowStockAlerts(locationId);
       return sendSuccess(res, alerts, 'Low stock alerts');
     } catch (err: any) {
-      return sendError(res, err.message || 'Failed to retrieve low stock alerts', 500);
+      return sendError(res, err.message || 'Failed to retrieve low stock alerts', err.statusCode || 500);
     }
   }
 }

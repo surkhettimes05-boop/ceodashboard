@@ -4,7 +4,108 @@ import { AuditService } from '../audit/audit.service.js';
 import Decimal from 'decimal.js';
 
 export class ProductsService {
-  static async getProducts(search?: string, categoryId?: string) {
+  static async syncPasaloCatalog() {
+    const catalogUrl = process.env.PASALO_CATALOG_API_URL?.replace(/\/$/, '');
+    const apiKey = process.env.PASALO_CATALOG_API_KEY;
+    if (!catalogUrl || !apiKey) throw new Error('PASALO catalog synchronization is not configured.');
+
+    const products: Array<Record<string, any>> = [];
+    let page = 1;
+    let total = Number.POSITIVE_INFINITY;
+    while (products.length < total) {
+      const url = new URL(catalogUrl);
+      url.searchParams.set('page', String(page));
+      url.searchParams.set('limit', '200');
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw new Error(`PASALO catalog request failed (${response.status}).`);
+      const payload = await response.json() as any;
+      const result = payload?.data?.items ? payload.data : payload?.items ? payload : null;
+      if (!result || !Array.isArray(result.items) || !Number.isFinite(Number(result.total))) {
+        throw new Error('PASALO returned an invalid catalog response.');
+      }
+      products.push(...result.items);
+      total = Number(result.total);
+      if (!result.items.length || products.length >= total) break;
+      page += 1;
+    }
+
+    return prisma.$transaction(async (tx) => {
+      let linked = 0;
+      let updated = 0;
+      const unmatched: string[] = [];
+      for (const item of products) {
+        const pasaloProductId = String(item.id ?? '');
+        const sku = String(item.skuCode ?? '').trim();
+        if (!pasaloProductId || !sku || !String(item.name ?? '').trim()) {
+          throw new Error('PASALO catalog contains a product without ID, SKU, or name.');
+        }
+        const [mapped, skuMatch] = await Promise.all([
+          tx.product.findUnique({ where: { pasalo_product_id: pasaloProductId } }),
+          tx.product.findUnique({ where: { sku } }),
+        ]);
+        if (mapped && skuMatch && mapped.id !== skuMatch.id) {
+          throw new Error(`PASALO SKU ${sku} conflicts with an existing product mapping.`);
+        }
+        const target = mapped ?? skuMatch;
+        if (target?.pasalo_product_id && target.pasalo_product_id !== pasaloProductId) {
+          throw new Error(`SKU ${sku} is already mapped to a different PASALO product.`);
+        }
+        const categoryName = item.category && typeof item.category === 'object' ? String(item.category.name ?? '') : '';
+        const unitName = item.defaultUnit && typeof item.defaultUnit === 'object' ? String(item.defaultUnit.name ?? '') : '';
+        const unitSymbol = item.defaultUnit && typeof item.defaultUnit === 'object' ? String(item.defaultUnit.symbol ?? '') : '';
+        const [existingCategory, existingUnit] = await Promise.all([
+          categoryName ? tx.category.findFirst({ where: { name: { equals: categoryName, mode: 'insensitive' } } }) : null,
+          unitName || unitSymbol ? tx.unit.findFirst({ where: { OR: [
+            ...(unitName ? [{ name: { equals: unitName, mode: 'insensitive' as const } }] : []),
+            ...(unitSymbol ? [{ abbreviation: { equals: unitSymbol, mode: 'insensitive' as const } }] : []),
+          ] } }) : null,
+        ]);
+        const category = existingCategory ?? (categoryName ? await tx.category.upsert({ where: { name: categoryName }, create: { name: categoryName }, update: {} }) : null);
+        const unit = existingUnit ?? (unitName ? await tx.unit.upsert({ where: { name: unitName }, create: { name: unitName, abbreviation: unitSymbol || unitName }, update: unitSymbol ? { abbreviation: unitSymbol } : {} }) : null);
+        if (target) {
+          await tx.product.update({
+            where: { id: target.id },
+            data: {
+              pasalo_product_id: pasaloProductId,
+              sku,
+              barcode: item.barcode ? String(item.barcode) : null,
+              name: String(item.name).trim(),
+              ...(category ? { category_id: category.id } : {}),
+              ...(unit ? { unit_id: unit.id } : {}),
+              is_active: item.isActive !== false,
+            },
+          });
+          if (mapped) updated += 1;
+          else linked += 1;
+        } else {
+          const costPrice = item.costPrice == null ? null : Number(item.costPrice);
+          const sellingPrice = item.sellingPrice == null ? null : Number(item.sellingPrice);
+          if (!category || !unit || !Number.isFinite(costPrice) || !Number.isFinite(sellingPrice)) {
+            unmatched.push(`${sku} (requires PASALO cost/selling price and category/unit)`);
+            continue;
+          }
+          await tx.product.create({ data: {
+            sku,
+            barcode: item.barcode ? String(item.barcode) : null,
+            pasalo_product_id: pasaloProductId,
+            name: String(item.name).trim(),
+            category_id: category.id,
+            unit_id: unit.id,
+            cost_price: costPrice!,
+            selling_price: sellingPrice!,
+            is_active: item.isActive !== false,
+          } });
+          linked += 1;
+        }
+      }
+      return { synced: products.length, linked, updated, unmatched };
+    });
+  }
+
+  static async getProducts(search?: string, categoryId?: string, branchId?: string) {
     const where: any = {};
     if (search) {
       where.OR = [
@@ -17,15 +118,16 @@ export class ProductsService {
       where.category_id = categoryId;
     }
 
-    return prisma.product.findMany({
+    const products = await prisma.product.findMany({
       where,
       include: {
         category: { select: { id: true, name: true } },
         unit: { select: { id: true, name: true, abbreviation: true } },
-        stock_balances: true,
+        stock_balances: branchId ? { where: { location_type: 'BRANCH', location_id: branchId } } : true,
       },
       orderBy: { created_at: 'desc' },
     });
+    return products;
   }
 
   static async getProductById(id: string) {

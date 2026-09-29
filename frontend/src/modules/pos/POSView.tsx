@@ -25,6 +25,7 @@ interface Product {
   selling_price: number;
   category: { name: string };
   unit: { abbreviation: string };
+  stock_balances?: Array<{ quantity: number | string }>;
 }
 
 interface CartItem {
@@ -91,7 +92,7 @@ export const POSView: React.FC = () => {
     try {
       setLoading(true);
       const [prodRes, custRes, brRes] = await Promise.all([
-        api.get('/products', { params: { search: search || undefined } }),
+        api.get('/products', { params: { search: search || undefined, branchId: selectedBranchId || user?.branchId || undefined } }),
         api.get('/customers', { params: { search: customerSearch || undefined } }),
         api.get('/branches'),
       ]);
@@ -111,7 +112,7 @@ export const POSView: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [search, customerSearch]);
+  }, [search, customerSearch, selectedBranchId]);
 
   useEffect(() => {
     if (!selectedCustomerId) { setCustomerSummary(null); return; }
@@ -180,6 +181,10 @@ export const POSView: React.FC = () => {
   }, []);
 
   const addToCart = (product: Product) => {
+    if (Number(product.stock_balances?.[0]?.quantity || 0) <= 0) {
+      push({ title: 'Out of stock', description: `${product.name} is not available at this store.`, tone: 'error' });
+      return;
+    }
     setCart((currentCart) => {
       const existing = currentCart.find((item) => item.product.id === product.id);
       if (existing) {
@@ -419,6 +424,13 @@ export const POSView: React.FC = () => {
           </div>
 
           <div className="pos-toolbar-actions">
+            {(user?.role === 'CEO' || user?.role === 'ADMIN') ? (
+              <label className="pos-store-context">Store
+                <select aria-label="Current store" value={selectedBranchId} onChange={(event) => { setSelectedBranchId(event.target.value); setCart([]); }}>
+                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </select>
+              </label>
+            ) : <span className="pos-store-context">Store: {branches.find((branch) => branch.id === selectedBranchId)?.name || user?.branchName || 'Loading...'}</span>}
             <span className="pos-keycap">F2 search</span>
             <span className="pos-keycap">F4 customer</span>
             <span className="pos-keycap">F10 pay</span>
@@ -463,7 +475,7 @@ export const POSView: React.FC = () => {
                 </div>
                 <div className="pos-product-card__name">{product.name}</div>
                 <div className="pos-product-card__footer">
-                  <span className="pos-stock">{product.category?.name || 'General'}</span>
+                  <span className="pos-stock">{Number(product.stock_balances?.[0]?.quantity || 0)} available</span>
                   <strong>{money(Number(product.selling_price))}</strong>
                 </div>
               </button>

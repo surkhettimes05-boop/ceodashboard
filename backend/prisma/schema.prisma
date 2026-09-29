@@ -346,6 +346,9 @@ model StockTransfer {
   status                  TransferStatus @default(PENDING)
   notes                   String?
   created_by              String
+  source_system           String?
+  external_transfer_id    String?        @unique
+  source_label            String?
   created_at              DateTime       @default(now())
   updated_at              DateTime       @updatedAt
 
@@ -368,14 +371,16 @@ model StockTransferItem {
 }
 
 model TransferReceipt {
-  id                   String   @id @default(uuid())
-  transfer_id          String
-  idempotency_key      String   @unique
-  payload_hash         String
-  destination_store_id String
-  status               String
-  received_at          DateTime @default(now())
-  received_by          String
+  id                    String    @id @default(uuid())
+  transfer_id           String
+  idempotency_key       String    @unique
+  payload_hash          String
+  destination_store_id  String
+  status                String
+  received_at           DateTime  @default(now())
+  received_by           String
+  acknowledged_at       DateTime?
+  acknowledgement_error String?
 
   transfer StockTransfer         @relation(fields: [transfer_id], references: [id])
   items    TransferReceiptItem[]

@@ -37,6 +37,10 @@ interface StockTransfer {
   source_location_id: string;
   destination_location_id: string;
   status: string;
+  source_label?: string | null;
+  source_system?: string | null;
+  external_transfer_id?: string | null;
+  destination?: { id: string; code: string; name: string } | null;
   created_at: string;
   items: { quantity: number; product: { name: string } }[];
 }
@@ -105,7 +109,9 @@ export const InventoryView: React.FC = () => {
 
   const handleReceiveTransfer = async (transferId: string) => {
     try {
-      await api.post(`/inventory/transfers/${transferId}/receive`);
+      await api.post(`/inventory/transfers/${transferId}/receive`, {}, {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      });
       fetchData();
     } catch (err: any) {
       push({ title: 'Transfer receive failed', description: err.response?.data?.message || 'Error receiving transfer', tone: 'error' });
@@ -149,7 +155,7 @@ export const InventoryView: React.FC = () => {
           onClick={() => setActiveTab('transfers')}
         >
           <ArrowRightLeft size={18} />
-          <span>Stock Transfers</span>
+          <span>Inbound Transfers</span>
         </button>
       </div>
 
@@ -275,7 +281,7 @@ export const InventoryView: React.FC = () => {
                   <th>Transfer #</th>
                   <th>Source Location</th>
                   <th>Destination Location</th>
-                  <th>Items Count</th>
+                  <th>Items</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -291,9 +297,9 @@ export const InventoryView: React.FC = () => {
                   transfers.map((tr) => (
                     <tr key={tr.id}>
                       <td className="font-mono" style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{tr.transfer_number}</td>
-                      <td>{tr.source_location_id}</td>
-                      <td>{tr.destination_location_id}</td>
-                      <td>{tr.items.length} Product(s)</td>
+                      <td>{tr.source_label || tr.source_location_id}</td>
+                      <td>{tr.destination ? `${tr.destination.name} (${tr.destination.code})` : tr.destination_location_id}</td>
+                      <td>{tr.items.map((item) => `${item.product.name}: ${Number(item.quantity)}`).join(', ')}</td>
                       <td>
                         {tr.status === 'IN_TRANSIT' ? (
                           <span className="badge badge-amber" style={{ display: 'inline-flex', gap: '4px' }}>
@@ -308,7 +314,7 @@ export const InventoryView: React.FC = () => {
                       <td>
                         {tr.status === 'IN_TRANSIT' && (
                           <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.75rem' }} onClick={() => handleReceiveTransfer(tr.id)}>
-                            Receive Stock
+                            Confirm Receive
                           </button>
                         )}
                       </td>

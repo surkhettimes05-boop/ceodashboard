@@ -135,7 +135,7 @@ describe('Inventory Integration Tests', () => {
       expect(Number(balance?.quantity)).toBe(100);
     });
 
-    it('should prevent negative stock for SALE movement', async () => {
+  it('should prevent negative stock for SALE movement', async () => {
       // First add stock
       await prisma.$transaction(async (tx) => {
         await InventoryService.recordMovementTx(tx, {
@@ -184,6 +184,19 @@ describe('Inventory Integration Tests', () => {
         });
       })).rejects.toThrow();
     });
+  });
+
+  it('reports low stock separately for each store branch', async () => {
+    await prisma.stockBalance.create({ data: { product_id: testProductId, location_type: 'BRANCH', location_id: testBranchId, quantity: 1 } });
+    const otherBranch = await prisma.branch.create({ data: { code: `TEST-LOW-${testSuffix}`, name: 'Low Stock Isolation Branch' } });
+    try {
+      await prisma.stockBalance.create({ data: { product_id: testProductId, location_type: 'BRANCH', location_id: otherBranch.id, quantity: 20 } });
+      expect(await InventoryService.getLowStockAlerts(testBranchId)).toHaveLength(1);
+      expect(await InventoryService.getLowStockAlerts(otherBranch.id)).toHaveLength(0);
+    } finally {
+      await prisma.stockBalance.deleteMany({ where: { location_id: otherBranch.id } });
+      await prisma.branch.delete({ where: { id: otherBranch.id } });
+    }
   });
 
   describe('Stock Transfers', () => {

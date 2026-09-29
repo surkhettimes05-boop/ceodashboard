@@ -39,10 +39,11 @@ export class SalesController {
       if (req.user?.role === "CASHIER" && !req.user.branchId) {
         return sendError(res, "Cashier is not assigned to a branch", 403);
       }
-      const branchId =
-        req.user?.role === "CASHIER"
-          ? req.user.branchId || undefined
-          : requestedBranchId;
+      const scoped = req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN';
+      if (scoped && (!req.user?.branchId || (requestedBranchId && requestedBranchId !== req.user.branchId))) {
+        return sendError(res, 'Access to another store is forbidden.', 403);
+      }
+      const branchId = scoped ? req.user!.branchId! : requestedBranchId;
       const summary = await SalesService.getPaymentSummary(
         startDate,
         endDate,
@@ -60,9 +61,11 @@ export class SalesController {
 
   static async getSales(req: AuthenticatedRequest, res: Response) {
     try {
-      // Cashiers can only view their own sales; Admins/CEOs can view all
-      const cashierId = req.user?.role === "CASHIER" ? req.user.id : undefined;
-      const sales = await SalesService.getSales(cashierId);
+      const requestedBranchId = req.query.branchId ? String(req.query.branchId) : undefined;
+      const scoped = req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN';
+      if (scoped && (!req.user?.branchId || (requestedBranchId && requestedBranchId !== req.user.branchId))) return sendError(res, 'Access to another store is forbidden.', 403);
+      const cashierId = req.user?.role === 'CASHIER' ? req.user.id : undefined;
+      const sales = await SalesService.getSales(cashierId, scoped ? req.user!.branchId! : requestedBranchId);
       return sendSuccess(res, sales, "Sales history retrieved");
     } catch (err: any) {
       return sendError(res, err.message || "Failed to retrieve sales", 500);
@@ -75,6 +78,7 @@ export class SalesController {
         ? req.params.id[0]
         : req.params.id;
       const sale = await SalesService.getSaleById(id);
+      if (req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN' && sale.branch_id !== req.user?.branchId) return sendError(res, 'Access to another store is forbidden.', 403);
       return sendSuccess(res, sale, "Sale transaction details");
     } catch (err: any) {
       return sendError(res, err.message || "Sale transaction not found", 404);
@@ -114,9 +118,7 @@ export class SalesController {
         return sendError(res, `Invalid sale request: ${details}`, 400);
       }
       const statusCode =
-        err.statusCode === 409 || err.message?.includes("already in progress")
-          ? 409
-          : 400;
+        err.statusCode === 409 || err.message?.includes("already in progress") ? 409 : (err.statusCode || 400);
       return sendError(
         res,
         err.message || "Sale transaction failed and rolled back",
@@ -137,16 +139,20 @@ export class SalesController {
         return sendError(res, "Reason is required for voiding a sale", 400);
       }
 
-      const voidedSale = await SalesService.voidSale(id, userId, reason);
+      const currentBranchId = req.user?.role === 'CEO' || req.user?.role === 'ADMIN' ? undefined : req.user?.branchId;
+      if (req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN' && !currentBranchId) return sendError(res, 'User is not assigned to a store.', 403);
+      const voidedSale = await SalesService.voidSale(id, userId, reason, currentBranchId || undefined);
       return sendSuccess(res, voidedSale, "Sale voided successfully");
     } catch (err: any) {
-      return sendError(res, err.message || "Failed to void sale", 400);
+      return sendError(res, err.message || "Failed to void sale", err.statusCode || 400);
     }
   }
 
   static async getReturns(req: AuthenticatedRequest, res: Response) {
     try {
-      const returns = await SalesReturnsService.getReturns();
+      const branchId = req.user?.role === 'CEO' || req.user?.role === 'ADMIN' ? undefined : req.user?.branchId;
+      if (req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN' && !branchId) return sendError(res, 'User is not assigned to a store.', 403);
+      const returns = await SalesReturnsService.getReturns(branchId || undefined);
       return sendSuccess(res, returns, "Sales returns retrieved");
     } catch (err: any) {
       return sendError(res, err.message || "Failed to retrieve returns", 500);
@@ -156,6 +162,7 @@ export class SalesController {
   static async createReturn(req: AuthenticatedRequest, res: Response) {
     try {
       const input = createReturnSchema.parse(req.body);
+      if (req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN' && (!req.user?.branchId || input.branchId !== req.user.branchId)) return sendError(res, 'Can only process returns for your assigned store.', 403);
       const returnRecord = await SalesReturnsService.createReturn(
         input,
         req.user?.id || "system",

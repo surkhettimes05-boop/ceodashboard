@@ -152,13 +152,10 @@ export class SalesService {
           where: { id: input.branchId },
         });
         if (!branch) throw new Error("Branch location not found.");
-        if (
-          actor?.role === "CASHIER" &&
-          (!actor.branchId || actor.branchId !== input.branchId)
-        ) {
-          throw new Error(
-            "Cashier can only create sales for their assigned branch.",
-          );
+        if (actor && actor.role !== 'CEO' && actor.role !== 'ADMIN' && (!actor.branchId || actor.branchId !== input.branchId)) {
+          const error: any = new Error('User can only create sales for their assigned branch.');
+          error.statusCode = 403;
+          throw error;
         }
 
         if (
@@ -493,13 +490,18 @@ export class SalesService {
    * Void a sale (same-day void with full reversal)
    * Reverses inventory deduction and accounting journal entry
    */
-  static async voidSale(saleId: string, userId: string, reason: string) {
+  static async voidSale(saleId: string, userId: string, reason: string, currentBranchId?: string | null) {
     const sale = await prisma.sale.findUnique({
       where: { id: saleId },
       include: { sale_items: true, sale_payments: true },
     });
 
     if (!sale) throw new Error("Sale not found.");
+    if (currentBranchId && sale.branch_id !== currentBranchId) {
+      const error: any = new Error('Access to another store is forbidden.');
+      error.statusCode = 403;
+      throw error;
+    }
     if (sale.status !== "COMPLETED")
       throw new Error("Only COMPLETED sales can be voided.");
 

@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service.js';
 import Decimal from 'decimal.js';
 import { createHash } from 'node:crypto';
 import { ReceiveTransferInput } from './inventory.schema.js';
+import { config } from '../../config/index.js';
 
 export class TransferReceiveError extends Error {
   constructor(message: string, public readonly statusCode = 400) {
@@ -96,8 +97,8 @@ export class InventoryService {
     return { invTx, updatedBalance };
   }
 
-  static async getStockBalances(locationId?: string) {
-    const where: any = {};
+  static async getStockBalances(locationId?: string, locationType?: 'WAREHOUSE' | 'BRANCH') {
+    const where: any = locationType ? { location_type: locationType } : {};
     if (locationId) {
       where.location_id = locationId;
     }
@@ -121,10 +122,11 @@ export class InventoryService {
     }));
   }
 
-  static async getInventoryTransactions(productId?: string, locationId?: string) {
+  static async getInventoryTransactions(productId?: string, locationId?: string, locationType?: 'WAREHOUSE' | 'BRANCH') {
     const where: any = {};
     if (productId) where.product_id = productId;
     if (locationId) where.location_id = locationId;
+    if (locationType) where.location_type = locationType;
 
     return prisma.inventoryTransaction.findMany({
       where,
@@ -238,14 +240,7 @@ export class InventoryService {
       throw new TransferReceiveError('A user assigned to a store is required to receive transfers.', 403);
     }
 
-    const payloadHash = createHash('sha256')
-      .update(JSON.stringify({
-        transferId,
-        items: [...(input.items || [])].sort((a, b) => a.productId.localeCompare(b.productId)),
-      }))
-      .digest('hex');
-
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM stock_transfers WHERE id = ${transferId} FOR UPDATE`;
       const transfer = await tx.stockTransfer.findUnique({
         where: { id: transferId },
@@ -257,6 +252,36 @@ export class InventoryService {
         throw new TransferReceiveError('Transfer destination does not match the current store.', 403);
       }
 
+      const expectedByProduct = new Map<string, Decimal>();
+      for (const item of transfer.items) {
+        expectedByProduct.set(item.product_id, (expectedByProduct.get(item.product_id) || new Decimal(0)).plus(item.quantity.toString()));
+      }
+      const requestedItems = input.items || [...expectedByProduct.entries()].map(([productId, quantity]) => ({
+        productId,
+        quantity: quantity.toNumber(),
+      }));
+      const requestedByProduct = new Map<string, Decimal>();
+      for (const item of requestedItems) {
+        if (requestedByProduct.has(item.productId)) {
+          throw new TransferReceiveError(`Product ${item.productId} appears more than once in the receipt.`);
+        }
+        requestedByProduct.set(item.productId, new Decimal(item.quantity));
+      }
+      const exact = requestedByProduct.size === expectedByProduct.size &&
+        [...expectedByProduct.entries()].every(([productId, quantity]) => requestedByProduct.get(productId)?.equals(quantity));
+      if (!exact) {
+        throw new TransferReceiveError('Received quantities must exactly match the dispatched transfer. Resolve discrepancies before confirming receipt.', 409);
+      }
+
+      const payloadHash = createHash('sha256')
+        .update(JSON.stringify({
+          transferId,
+          items: [...requestedByProduct.entries()]
+            .map(([productId, quantity]) => ({ productId, quantity: quantity.toString() }))
+            .sort((a, b) => a.productId.localeCompare(b.productId)),
+        }))
+        .digest('hex');
+
       const existingByKey = await tx.transferReceipt.findUnique({
         where: { idempotency_key: idempotencyKey },
         include: { items: true },
@@ -265,15 +290,7 @@ export class InventoryService {
         if (existingByKey.transfer_id !== transferId || existingByKey.payload_hash !== payloadHash) {
           throw new TransferReceiveError('Idempotency key was already used with a different payload.', 409);
         }
-        return existingByKey;
-      }
-
-      const existingReceipts = await tx.transferReceipt.findMany({ include: { items: true } });
-      const receivedByProduct = new Map<string, Decimal>();
-      for (const receipt of existingReceipts.filter((item) => item.transfer_id === transferId)) {
-        for (const item of receipt.items) {
-          receivedByProduct.set(item.product_id, (receivedByProduct.get(item.product_id) || new Decimal(0)).plus(item.received_quantity.toString()));
-        }
+        return { receipt: existingByKey, sourceSystem: transfer.source_system, externalTransferId: transfer.external_transfer_id };
       }
 
       if (transfer.status === TransferStatus.COMPLETED) {
@@ -282,39 +299,10 @@ export class InventoryService {
           include: { items: true },
           orderBy: { received_at: 'desc' },
         });
-        if (latestReceipt) return latestReceipt;
+        if (latestReceipt) return { receipt: latestReceipt, sourceSystem: transfer.source_system, externalTransferId: transfer.external_transfer_id };
       }
       if (transfer.status !== TransferStatus.IN_TRANSIT) {
         throw new TransferReceiveError(`Transfer cannot be received. Current status is ${transfer.status}`);
-      }
-
-      const expectedByProduct = new Map<string, Decimal>();
-      for (const item of transfer.items) {
-        expectedByProduct.set(item.product_id, (expectedByProduct.get(item.product_id) || new Decimal(0)).plus(item.quantity.toString()));
-      }
-      const requestedItems = input.items || [...expectedByProduct.entries()]
-        .map(([productId, expected]) => ({
-          productId,
-          quantity: expected.minus(receivedByProduct.get(productId) || 0).toNumber(),
-        }))
-        .filter((item) => item.quantity > 0);
-      const requestedByProduct = new Map<string, Decimal>();
-      for (const item of requestedItems) {
-        if (!expectedByProduct.has(item.productId)) {
-          throw new TransferReceiveError(`Product ${item.productId} is not part of this transfer.`);
-        }
-        if (requestedByProduct.has(item.productId)) {
-          throw new TransferReceiveError(`Product ${item.productId} appears more than once in the receipt.`);
-        }
-        const quantity = new Decimal(item.quantity);
-        const remaining = expectedByProduct.get(item.productId)!.minus(receivedByProduct.get(item.productId) || 0);
-        if (quantity.isNegative() || quantity.isZero() || quantity.greaterThan(remaining)) {
-          throw new TransferReceiveError(`Invalid received quantity for product ${item.productId}. Remaining quantity: ${remaining.toString()}`);
-        }
-        if (!await tx.product.findUnique({ where: { id: item.productId }, select: { id: true } })) {
-          throw new TransferReceiveError(`Product ${item.productId} not found.`);
-        }
-        requestedByProduct.set(item.productId, quantity);
       }
 
       const receipt = await tx.transferReceipt.create({
@@ -327,13 +315,11 @@ export class InventoryService {
           received_by: userId,
           items: {
             create: [...requestedByProduct.entries()].map(([productId, quantity]) => {
-              const expected = expectedByProduct.get(productId)!;
-              const received = (receivedByProduct.get(productId) || new Decimal(0)).plus(quantity);
               return {
                 product_id: productId,
-                expected_quantity: expected.toNumber(),
+                expected_quantity: expectedByProduct.get(productId)!.toNumber(),
                 received_quantity: quantity.toNumber(),
-                remaining_quantity: expected.minus(received).toNumber(),
+                remaining_quantity: 0,
               };
             }),
           },
@@ -351,37 +337,96 @@ export class InventoryService {
           quantity: quantity.toNumber(),
           unitCost: product!.cost_price,
           referenceType: 'WAREHOUSE_TRANSFER',
-          referenceId: transferId,
+          referenceId: transfer.external_transfer_id || transferId,
           userId,
           notes: `Transfer receipt ${receipt.id}`,
         });
       }
 
-      const complete = [...expectedByProduct.entries()].every(([productId, expected]) =>
-        expected.minus(receivedByProduct.get(productId) || 0).minus(requestedByProduct.get(productId) || 0).isZero()
-      );
       await tx.transferReceipt.update({
         where: { id: receipt.id },
-        data: { status: complete ? 'COMPLETED' : 'PARTIALLY_RECEIVED' },
+        data: { status: 'COMPLETED' },
       });
-      if (complete) {
-        await tx.stockTransfer.update({ where: { id: transferId }, data: { status: TransferStatus.COMPLETED } });
-      }
+      await tx.stockTransfer.update({ where: { id: transferId }, data: { status: TransferStatus.COMPLETED } });
 
       await AuditService.log({
         userId,
         action: 'STOCK_TRANSFER_RECEIVED',
         entity: 'TransferReceipt',
         entityId: receipt.id,
-        newValues: { transferId, storeId: currentStoreId, complete },
+        newValues: { transferId, storeId: currentStoreId, complete: true },
       });
 
-      return { ...receipt, status: complete ? 'COMPLETED' : 'PARTIALLY_RECEIVED' };
+      return {
+        receipt: { ...receipt, status: 'COMPLETED' },
+        sourceSystem: transfer.source_system,
+        externalTransferId: transfer.external_transfer_id,
+      };
     });
+
+    if (result.sourceSystem === 'PASALO' && result.externalTransferId) {
+      const acknowledgement = await this.acknowledgePasaloReceipt(result.externalTransferId, transferId);
+      return { ...result.receipt, acknowledgement };
+    }
+    return result.receipt;
   }
 
-  static async getLowStockAlerts() {
+  private static async acknowledgePasaloReceipt(externalTransferId: string, localTransferId: string) {
+    const transfer = await prisma.stockTransfer.findUniqueOrThrow({
+      where: { id: localTransferId },
+      include: {
+        items: { include: { product: { select: { pasalo_product_id: true } } } },
+        receipts: { orderBy: { received_at: 'desc' }, take: 1 },
+      },
+    });
+    const receipt = transfer.receipts[0];
+    if (receipt?.acknowledged_at) return { status: 'ACKNOWLEDGED', acknowledgedAt: receipt.acknowledged_at };
+    if (!config.pasaloReceiptAckUrl) {
+      const message = 'PASALO receipt acknowledgement URL is not configured.';
+      if (receipt) await prisma.transferReceipt.update({ where: { id: receipt.id }, data: { acknowledgement_error: message } });
+      return { status: 'PENDING', error: message };
+    }
+
+    const missing = transfer.items.filter((item) => !item.product.pasalo_product_id);
+    if (missing.length) {
+      const message = 'Cannot acknowledge receipt because a product has no PASALO mapping.';
+      if (receipt) await prisma.transferReceipt.update({ where: { id: receipt.id }, data: { acknowledgement_error: message } });
+      return { status: 'PENDING', error: message };
+    }
+
+    try {
+      const response = await fetch(`${config.pasaloReceiptAckUrl.replace(/\/+$/, '')}/${encodeURIComponent(externalTransferId)}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-pasalo-webhook-secret': config.pasaloWebhookSecret,
+          'idempotency-key': `store-receipt-${externalTransferId}`,
+        },
+        body: JSON.stringify({
+          destinationBranchCode: await prisma.branch.findUniqueOrThrow({ where: { id: transfer.destination_location_id } }).then((branch) => branch.code),
+          items: transfer.items.map((item) => ({
+            productId: item.product.pasalo_product_id!,
+            quantity: Number(item.quantity),
+          })),
+        }),
+      });
+      if (!response.ok) throw new Error(`PASALO returned HTTP ${response.status}`);
+      const acknowledgedAt = new Date();
+      if (receipt) await prisma.transferReceipt.update({
+        where: { id: receipt.id },
+        data: { acknowledged_at: acknowledgedAt, acknowledgement_error: null },
+      });
+      return { status: 'ACKNOWLEDGED', acknowledgedAt };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (receipt) await prisma.transferReceipt.update({ where: { id: receipt.id }, data: { acknowledgement_error: message } });
+      return { status: 'PENDING', error: message };
+    }
+  }
+
+  static async getLowStockAlerts(locationId?: string) {
     const balances = await prisma.stockBalance.findMany({
+      where: locationId ? { location_id: locationId, location_type: 'BRANCH' } : undefined,
       include: {
         product: {
           include: { category: true, unit: true },
@@ -394,8 +439,9 @@ export class InventoryService {
     );
   }
 
-  static async getStockTransfers() {
-    return prisma.stockTransfer.findMany({
+  static async getStockTransfers(destinationStoreId?: string) {
+    const transfers = await prisma.stockTransfer.findMany({
+      where: destinationStoreId ? { destination_location_id: destinationStoreId } : undefined,
       include: {
         items: {
           include: { product: { select: { sku: true, name: true } } },
@@ -403,5 +449,14 @@ export class InventoryService {
       },
       orderBy: { created_at: 'desc' },
     });
+    const branches = await prisma.branch.findMany({
+      where: { id: { in: [...new Set(transfers.map((transfer) => transfer.destination_location_id))] } },
+      select: { id: true, code: true, name: true },
+    });
+    const byId = new Map(branches.map((branch) => [branch.id, branch]));
+    return transfers.map((transfer) => ({
+      ...transfer,
+      destination: byId.get(transfer.destination_location_id) ?? null,
+    }));
   }
 }

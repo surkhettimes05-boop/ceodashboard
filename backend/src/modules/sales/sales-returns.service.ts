@@ -7,8 +7,9 @@ import Decimal from 'decimal.js';
 import { CreateReturnInput } from './sales.schema.js';
 
 export class SalesReturnsService {
-  static async getReturns() {
+  static async getReturns(branchId?: string) {
     return prisma.saleReturn.findMany({
+      where: branchId ? { branch_id: branchId } : undefined,
       include: {
         sale: { select: { sale_number: true } },
         branch: { select: { name: true, code: true } },

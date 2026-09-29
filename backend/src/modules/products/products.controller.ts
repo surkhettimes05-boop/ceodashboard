@@ -5,11 +5,24 @@ import { sendSuccess, sendError } from '../../utils/response.js';
 import { AuthenticatedRequest } from '../../middleware/auth.middleware.js';
 
 export class ProductsController {
+  static async syncPasaloCatalog(_req: AuthenticatedRequest, res: Response) {
+    try {
+      return sendSuccess(res, await ProductsService.syncPasaloCatalog(), 'PASALO products synchronized');
+    } catch (err: any) {
+      return sendError(res, err.message || 'Failed to synchronize PASALO products', 502);
+    }
+  }
+
   static async getProducts(req: AuthenticatedRequest, res: Response) {
     try {
       const search = req.query.search as string;
       const categoryId = req.query.categoryId as string;
-      const products = await ProductsService.getProducts(search, categoryId);
+      const requestedBranchId = req.query.branchId as string | undefined;
+      const scoped = req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN';
+      if (scoped && (!req.user?.branchId || (requestedBranchId && requestedBranchId !== req.user.branchId))) {
+        return sendError(res, 'Access to another store is forbidden.', 403);
+      }
+      const products = await ProductsService.getProducts(search, categoryId, scoped ? req.user!.branchId! : requestedBranchId);
       return sendSuccess(res, products, 'Products retrieved');
     } catch (err: any) {
       return sendError(res, err.message || 'Failed to retrieve products', 500);

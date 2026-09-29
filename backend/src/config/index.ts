@@ -36,6 +36,7 @@ export function validateConfig(rawEnv: Record<string, string | undefined> = proc
   const jwtRefreshSecret = (rawEnv.JWT_REFRESH_SECRET ?? '').trim();
   const feedbackTokenSecret = (rawEnv.FEEDBACK_TOKEN_SECRET ?? '').trim();
   const pasaloWebhookSecret = (rawEnv.PASALO_WEBHOOK_SECRET ?? '').trim();
+  const pasaloReceiptAckUrl = (rawEnv.PASALO_RECEIPT_ACK_URL ?? '').trim();
   const pasaloAllowedBranchCodes = (rawEnv.PASALO_ALLOWED_BRANCH_CODES ?? '')
     .split(',').map((code) => code.trim()).filter(Boolean);
   const pasalhoReportingApiUrl = (rawEnv.PASALHO_REPORTING_API_URL ?? '').trim();
@@ -62,6 +63,9 @@ export function validateConfig(rawEnv: Record<string, string | undefined> = proc
     }
     if (pasaloWebhookSecret.length < 32) {
       errors.push('Production requires PASALO_WEBHOOK_SECRET to be set and at least 32 characters long.');
+    }
+    if (!pasaloReceiptAckUrl || !/^https:\/\//i.test(pasaloReceiptAckUrl)) {
+      errors.push('Production requires PASALO_RECEIPT_ACK_URL to use HTTPS.');
     }
     if (!feedbackTokenSecret || feedbackTokenSecret.length < 32) {
       errors.push('Production requires FEEDBACK_TOKEN_SECRET to be set and at least 32 characters long.');
@@ -110,6 +114,7 @@ export function validateConfig(rawEnv: Record<string, string | undefined> = proc
     jwtRefreshSecret: z.string().min(32),
     feedbackTokenSecret: z.string().min(1),
     pasaloWebhookSecret: z.string(),
+    pasaloReceiptAckUrl: z.string(),
     pasaloAllowedBranchCodes: z.array(z.string()),
     jwtExpiresIn: z.string().min(1),
     corsOrigin: z.string().min(1),
@@ -126,6 +131,7 @@ export function validateConfig(rawEnv: Record<string, string | undefined> = proc
     jwtRefreshSecret: jwtRefreshSecret || 'dev-jwt-refresh-secret-key-change-me-in-production-1224',
     feedbackTokenSecret,
     pasaloWebhookSecret,
+    pasaloReceiptAckUrl,
     pasaloAllowedBranchCodes,
     pasalhoReportingApiUrl,
     pasalhoReportingApiToken,

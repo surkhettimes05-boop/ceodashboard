@@ -2,19 +2,23 @@ import { Response } from 'express';
 import { AnalyticsService } from './analytics.service.js';
 import { sendSuccess, sendError } from '../../utils/response.js';
 import { AuthenticatedRequest } from '../../middleware/auth.middleware.js';
+import { ReportingService } from '../reporting/reporting.service.js';
 
 export class AnalyticsController {
   static async getExecutiveDashboard(req: AuthenticatedRequest, res: Response) {
     try {
       const range = (req.query.range as string) || 'this_month';
       const branchId = req.query.branchId as string;
+      const scoped = req.user?.role !== 'CEO' && req.user?.role !== 'ADMIN';
+      if (scoped && (!req.user?.branchId || (branchId && branchId !== req.user.branchId))) return sendError(res, 'Access to another store is forbidden.', 403);
       const resolvedRange = AnalyticsService.resolveDateRange(range);
 
-      const metrics = await AnalyticsService.getExecutiveDashboard({
-        startDate: resolvedRange.startDate,
-        endDate: resolvedRange.endDate,
-        branchId,
-      });
+      const metrics = await ReportingService.getDailySummary(
+        resolvedRange.startDate,
+        resolvedRange.endDate,
+        resolvedRange.label,
+        scoped ? req.user!.branchId! : branchId
+      );
 
       return sendSuccess(res, {
         ...metrics,
