@@ -23,6 +23,7 @@ export interface DailyReportingSummary {
     store: ReportingMetric<number>;
     b2b: ReportingMetric<number>;
     online: ReportingMetric<number>;
+    franchise: ReportingMetric<number>;
     orderCount: ReportingMetric<number>;
     cancelledOrders: ReportingMetric<number>;
     byStore: ReportingMetric<Array<{ storeName: string; sales: number; orders: number }>>;

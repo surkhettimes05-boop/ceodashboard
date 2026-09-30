@@ -28,6 +28,7 @@ import feedbackRoutes from './modules/feedback/feedback.routes.js';
 import complaintsRoutes from './modules/complaints/complaints.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import syncRoutes from './modules/sync/sync.routes.js';
+import { evaluateReadiness } from './health/readiness.js';
 
 const app = express();
 const allowedOrigins = config.corsAllowedOrigins;
@@ -88,42 +89,13 @@ app.get('/api/health', async (req, res) => {
   res.json({ status: 'healthy' });
 });
 
-app.get('/ready', async (req, res) => {
-  const checks = {
-    database: 'ok',
-    redis: 'ok',
-    external_apis: 'ok',
-  };
-  
-  let allReady = true;
-  
-  // Check database
-  try {
-    const { prisma } = await import('./db/prisma.js');
-    await prisma.$queryRaw`SELECT 1`;
-  } catch (error) {
-    checks.database = 'error';
-    allReady = false;
-  }
-  
-  // Check Redis (if configured)
-  try {
-    // Redis check would go here if Redis is configured
-  } catch (error) {
-    checks.redis = 'error';
-    allReady = false;
-  }
-  
-  // Check external APIs (if any)
-  try {
-    // External API checks would go here
-  } catch (error) {
-    checks.external_apis = 'error';
-    allReady = false;
-  }
-  
-  const statusCode = allReady ? 200 : 503;
-  res.status(statusCode).json({ ready: allReady });
+app.get('/ready', async (_req, res) => {
+  const { prisma } = await import('./db/prisma.js');
+  const readiness = await evaluateReadiness(
+    () => prisma.$queryRaw`SELECT 1`,
+    Boolean(config.pasalhoReportingApiUrl),
+  );
+  res.status(readiness.ready ? 200 : 503).json(readiness);
 });
 
 app.use('/api/auth', authRoutes);

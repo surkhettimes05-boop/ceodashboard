@@ -3,7 +3,7 @@ import { StoreReportingService } from './store-reporting.service.js';
 import { DailyReportingSummary, ReportingMetric } from './reporting.types.js';
 
 const storeReadModel = 'CEO PostgreSQL store sales and stock_balance read model';
-const pasalhoReadModel = 'Pasalho reporting API: GET /api/reporting/daily-summary';
+const pasalhoReadModel = 'Pasalho reporting API: GET /api/v1/reporting/daily-summary';
 
 function metric<T>(value: T | null, sourceSystem: 'PASALHO' | 'CEO_DASHBOARD' | 'COMBINED', apiOrReadModel: string, calculation: string): ReportingMetric<T> {
   return {
@@ -30,10 +30,11 @@ export class ReportingService {
     return {
       period: { startDate: startDate.toISOString(), endDate: endDate.toISOString(), label },
       sales: {
-        total: metric(pasalho ? store.sales + pasalho.sales.b2b + pasalho.sales.online : null, 'COMBINED', `${storeReadModel} + ${pasalhoReadModel}`, 'Store sales + Pasalho B2B sales + Pasalho online sales.'),
+        total: metric(pasalho ? store.sales + pasalho.sales.b2b + pasalho.sales.online + pasalho.sales.franchise : null, 'COMBINED', `${storeReadModel} + ${pasalhoReadModel}`, 'Store sales + Pasalho B2B sales + Pasalho online sales + Pasalho franchise sales.'),
         store: metric(store.sales, 'CEO_DASHBOARD', storeReadModel, 'Sum completed store sales in the selected period.'),
         b2b: metric(pasalho?.sales.b2b ?? null, 'PASALHO', pasalhoReadModel, 'Pasalho-provided B2B sales total.'),
         online: metric(pasalho?.sales.online ?? null, 'PASALHO', pasalhoReadModel, 'Pasalho-provided online sales total.'),
+        franchise: metric(pasalho?.sales.franchise ?? null, 'PASALHO', pasalhoReadModel, 'Pasalho-provided franchise sales total.'),
         orderCount: metric(pasalho ? store.orderCount + pasalho.sales.orderCount : null, 'COMBINED', `${storeReadModel} + ${pasalhoReadModel}`, 'Store completed orders + Pasalho order count.'),
         cancelledOrders: metric(pasalho ? store.cancelledOrders + pasalho.sales.cancelledOrders : null, 'COMBINED', `${storeReadModel} + ${pasalhoReadModel}`, 'Store cancelled/voided orders + Pasalho cancelled orders.'),
         byStore: metric(store.byStore, 'CEO_DASHBOARD', storeReadModel, 'Group completed store sales by branch.'),

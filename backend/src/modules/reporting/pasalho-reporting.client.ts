@@ -4,6 +4,7 @@ export interface PasalhoDailySummary {
   sales: {
     b2b: number;
     online: number;
+    franchise: number;
     orderCount: number;
     cancelledOrders: number;
   };
@@ -19,7 +20,7 @@ export class PasalhoReportingClient {
       return null;
     }
 
-    const url = new URL('/api/reporting/daily-summary', config.pasalhoReportingApiUrl);
+    const url = new URL('/api/v1/reporting/daily-summary', config.pasalhoReportingApiUrl);
     url.searchParams.set('startDate', startDate.toISOString());
     url.searchParams.set('endDate', endDate.toISOString());
 
