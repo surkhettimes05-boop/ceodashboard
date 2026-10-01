@@ -41,7 +41,17 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ceodashboard_test
       - run: npx tsc --noEmit
-      - run: npm test
+      - name: Unit and contract tests
+        run: npx vitest run src
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ceodashboard_test
+          NODE_ENV: test
+          JWT_SECRET: ci-only-jwt-secret-32-characters-minimum
+          JWT_REFRESH_SECRET: ci-only-refresh-secret-32-characters-minimum
+          FEEDBACK_TOKEN_SECRET: ci-only-feedback-secret
+          PASALO_WEBHOOK_SECRET: ci-only-webhook-secret
+      - name: Integration tests
+        run: npx vitest run tests/integration
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ceodashboard_test
           NODE_ENV: test
