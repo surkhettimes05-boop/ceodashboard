@@ -1,3 +1,4 @@
+# Local development only. Production is deployed through backend/railway.json.
 version: '3.8'
 
 services:
